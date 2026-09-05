@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillSwap — Admin Dashboard</title>
+  <meta name="description" content="Monitor registered users, manage account statuses, and oversee SkillSwap 1-to-1 matching.">
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Navigation Header -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="admin.html" class="logo">
+        <div class="logo-icon admin-logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <span class="logo-text">SkillSwap Admin Portal</span>
+      </a>
+
+      <div class="nav-right">
+        <span id="adminGreeting" class="user-greeting">Logged in as Administrator</span>
+        <a href="dashboard.html" class="btn-secondary-sm" target="_blank">View Live App</a>
+        <button id="adminLogoutBtn" class="logout-btn" type="button">Log Out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="dashboard-section">
+    <div class="container dash-container">
+      
+      <!-- Welcome Banner -->
+      <div class="dash-welcome-banner admin-banner">
+        <div>
+          <h1 id="adminWelcomeTitle" class="dash-title">Admin Dashboard</h1>
+          <p class="dash-subtitle">Overview of registered members, user behavior, and platform session metrics.</p>
+        </div>
+        <div class="admin-live-badge">
+          <span class="pulse-dot"></span> Real-Time Analytics
+        </div>
+      </div>
+
+      <!-- Metrics Cards Grid -->
+      <div class="admin-metrics-grid">
+        <div class="admin-metric-card">
+          <div class="metric-icon total">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div class="metric-data">
+            <div id="metricTotal" class="metric-number">0</div>
+            <div class="metric-label">Total Users</div>
+          </div>
+        </div>
+
+        <div class="admin-metric-card">
+          <div class="metric-icon blocked">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </div>
+          <div class="metric-data">
+            <div id="metricBlocked" class="metric-number">0</div>
+            <div class="metric-label">Blocked Users</div>
+          </div>
+        </div>
+
+        <div class="admin-metric-card">
+          <div class="metric-icon pending">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="metric-data">
+            <div id="metricSessionsCreated" class="metric-number">0</div>
+            <div class="metric-label">Total Sessions Created</div>
+          </div>
+        </div>
+
+        <div class="admin-metric-card">
+          <div class="metric-icon verified">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="metric-data">
+            <div id="metricSessionsCompleted" class="metric-number">0</div>
+            <div class="metric-label">Successful Sessions Completed</div>
+          </div>
+        </div>
+
+        <div class="admin-metric-card">
+          <div class="metric-icon conversion">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <div class="metric-data">
+            <div id="metricConversionRate" class="metric-number">0%</div>
+            <div class="metric-label">Conversion Rate (Completed / Total)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users Section -->
+      <section class="dash-card admin-table-card" style="margin-top: 1.5rem;">
+        <div class="card-header" style="flex-wrap: wrap; gap: 1rem;">
+          <div>
+            <h2 class="card-title">Users</h2>
+            <span class="field-hint" id="userCountHint">Showing 0 users</span>
+          </div>
+
+          <!-- Controls Toolbar -->
+          <div class="admin-toolbar">
+            <div class="match-filter-tabs">
+              <button type="button" class="admin-filter-btn active" data-filter="all">All Users</button>
+              <button type="button" class="admin-filter-btn" data-filter="blocked">Blocked</button>
+            </div>
+
+            <div class="search-box-wrapper">
+              <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="adminSearchInput" class="search-input" placeholder="Search user ID, name, email...">
+            </div>
+          </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="table-responsive">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th>Joined Date</th>
+                <th>Total Sessions Completed</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="userTableBody">
+              <!-- Dynamically populated by admin.js -->
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- User Behavior Section -->
+      <section class="dash-card admin-table-card" style="margin-top: 1.5rem;">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">User Behavior</h2>
+            <span class="field-hint" id="sessionCountHint">0 total session activities</span>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Peer 1</th>
+                <th>Peer 2</th>
+                <th>Completion Progress</th>
+                <th>Session Status</th>
+                <th>Created Date</th>
+                <th>Completed Date</th>
+              </tr>
+            </thead>
+            <tbody id="sessionTableBody">
+              <!-- Dynamically populated by admin.js -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Delete User Confirmation Modal -->
+  <div id="deleteUserModal" class="modal-overlay" role="dialog">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Delete User Account</h3>
+        <button id="closeDeleteModalBtn" class="close-modal-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="text-align: center; padding: 1.75rem;">
+        <div style="font-size: 2rem; margin-bottom: 0.5rem; color: var(--danger);">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h4 style="font-size: 1.1rem; margin-bottom: 0.5rem;" id="deleteModalTargetName">User Name</h4>
+        <p style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Are you sure you want to permanently delete this user account? All profile skills, messages, and connections will be permanently removed.
+        </p>
+
+        <div style="display: flex; gap: 0.75rem; justify-content: center;">
+          <button type="button" id="cancelDeleteBtn" class="btn-secondary-sm" style="flex: 1;">Cancel</button>
+          <button type="button" id="confirmDeleteBtn" class="btn-danger-sm" style="flex: 1;">Delete Permanently</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastNotification" class="toast-notification" aria-live="polite">
+    <div class="toast-content">
+      <div id="toastIcon" class="toast-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <span id="toastMessage">Action completed successfully.</span>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="footer-copy">© 2026 SkillSwap. 1-to-1 Skill Exchange Platform Admin Console.</p>
+    </div>
+  </footer>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="store.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

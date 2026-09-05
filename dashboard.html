@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillSwap — Your Dashboard</title>
+  <meta name="description" content="Manage your 1-to-1 skill exchange profile and discover recommended peer learning matches on SkillSwap.">
+  <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Navigation Header -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="index.html" class="logo">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 16V4M7 4L3 8M7 4L11 8"/>
+            <path d="M17 8V20M17 20L21 16M17 20L13 16"/>
+          </svg>
+        </div>
+        <span class="logo-text">SkillSwap</span>
+      </a>
+
+      <div class="nav-right">
+        <!-- Notification Bell & Dropdown -->
+        <div class="notif-wrapper">
+          <button id="notifBellBtn" class="notif-bell-btn" type="button" aria-label="Notifications">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span id="notifBadge" class="notif-badge hidden-field">0</span>
+          </button>
+
+          <!-- Notification Dropdown Drawer -->
+          <div id="notifDropdown" class="notif-dropdown hidden-field">
+            <div class="notif-header">
+              <span class="notif-header-title">Notifications</span>
+            </div>
+            <div id="notifList" class="notif-list">
+              <div class="notif-empty">No notifications yet</div>
+            </div>
+          </div>
+        </div>
+
+        <span id="dashUserGreeting" class="user-greeting">Logged in as...</span>
+        <button id="dashLogoutBtn" class="logout-btn" type="button">Log Out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Content -->
+  <main class="dashboard-section">
+    <div class="container dash-container">
+      
+      <!-- Welcome Banner -->
+      <div class="dash-welcome-banner">
+        <div class="dash-welcome-left">
+          <h1 id="welcomeTitle" class="dash-title">Welcome to your Dashboard</h1>
+          <p class="dash-subtitle">Your skill profile is active and ready for 1-to-1 learning exchanges.</p>
+        </div>
+        <div class="dash-welcome-right">
+          <div class="welcome-stat-pill" id="welcomeTotalSessionsStat" title="Total Sessions Completed">
+            <span class="welcome-stat-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            </span>
+            <div class="welcome-stat-info">
+              <strong class="welcome-stat-value" id="welcomeTotalSessionsBadge">Completed Sessions: 0</strong>
+            </div>
+          </div>
+          <a href="profile.html" class="btn-edit-profile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            <span>Edit Profile</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Dashboard Layout Grid -->
+      <div class="dash-grid">
+        
+        <!-- Left Column: User Profile Summary -->
+        <aside class="dash-card profile-summary-card">
+          <div class="card-header">
+            <h2 class="card-title">My Exchange Profile</h2>
+            <span class="active-badge">Active</span>
+          </div>
+
+          <div class="dash-user-info">
+            <div style="display: flex; align-items: center; gap: 0.85rem; margin-bottom: 0.75rem;">
+              <div id="dashUserAvatar" class="peer-avatar" style="width: 48px; height: 48px; font-size: 1.05rem; background: var(--primary-light); color: var(--primary); border: 1px solid var(--learn-border); flex-shrink: 0;">AM</div>
+              <div>
+                <div class="dash-user-name" id="dashName" style="margin-bottom: 0.1rem;">Alex Morgan</div>
+                <div class="peer-role" id="dashRole">Skill Explorer</div>
+              </div>
+            </div>
+            <p class="dash-user-bio" id="dashBio">No bio added yet.</p>
+          </div>
+
+          <div class="dash-skills-block">
+            <h3 class="skills-block-title">Skill I Teach</h3>
+            <div class="dash-tag-list" id="dashTeachSkills"></div>
+          </div>
+
+          <div class="dash-skills-block">
+            <h3 class="skills-block-title">Skill I Want to Learn</h3>
+            <div class="dash-tag-list" id="dashLearnSkills"></div>
+          </div>
+
+          <div class="dash-meta-row" style="grid-template-columns: 1fr;">
+            <div class="meta-item">
+              <span class="meta-label">Available Time</span>
+              <span class="meta-value" id="dashAvailability">Weekends</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Right Column: Matching Engine & Results -->
+        <section class="dash-card matches-card">
+          <div class="card-header">
+            <h2 class="card-title">Find a Match</h2>
+            <span class="field-hint" id="matchCountHint">Calculated based on your profile skills & schedule</span>
+          </div>
+
+          <!-- Filter & Search Toolbar -->
+          <div class="match-controls">
+            <div class="match-filter-tabs">
+              <button type="button" class="match-filter-btn active" data-filter="all">All Matches</button>
+              <button type="button" class="match-filter-btn" data-filter="twoway">2-Way Swaps</button>
+              <button type="button" class="match-filter-btn" data-filter="oneway">1-Way Matches</button>
+            </div>
+
+            <div class="search-box-wrapper">
+              <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="matchSearchInput" class="search-input" placeholder="Search skills or names...">
+            </div>
+          </div>
+
+          <!-- Dynamic Matches Grid -->
+          <div class="matches-list" id="matchesList">
+            <!-- Matches populated dynamically by dashboard.js -->
+          </div>
+
+        </section>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Connect & Rich Chat Modal Window -->
+  <div id="connectModal" class="modal-overlay" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div id="modalPeerAvatar" class="peer-avatar">SC</div>
+          <div>
+            <h3 id="modalPeerName" class="modal-title">Connect with Sophia Chen</h3>
+            <div id="modalPeerRole" class="peer-role">Product Designer</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button id="clearChatBtn" class="btn-clear-chat hidden-field" type="button" title="Clear Chat History">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              <line x1="10" y1="11" x2="10" y2="17"></line>
+              <line x1="14" y1="11" x2="14" y2="17"></line>
+            </svg>
+            <span>Clear Chat</span>
+          </button>
+          <button id="closeModalBtn" class="close-modal-btn" type="button">&times;</button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <!-- Match Compatibility Banner -->
+        <div id="modalMatchBanner" class="match-reasons-list">
+          <div class="reason-item">1:1 Match: You teach what Sophia wants, and Sophia teaches what you want!</div>
+        </div>
+
+        <!-- Restricted Connection Agreement Card -->
+        <div id="connectionAgreementCard" class="connection-agreement-card">
+          <div class="agreement-header">
+            <div class="agreement-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+            <div>
+              <h4 class="agreement-title">Connection Agreement Required</h4>
+              <p class="agreement-subtitle">Do you both agree to connect and share your skills?</p>
+            </div>
+          </div>
+          <div id="agreementStatusText" class="agreement-status-text">
+            Waiting for agreement...
+          </div>
+          <div id="agreementActionRow" class="agreement-action-row">
+            <button type="button" id="agreeYesBtn" class="btn-agree-yes">
+              <span>YES, I Agree</span>
+            </button>
+            <button type="button" id="agreeNoBtn" class="btn-agree-no">
+              <span>NO, Reject Connection</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Rejected Connection Notice -->
+        <div id="connectionRejectedCard" class="connection-rejected-card hidden-field">
+          <div class="rejected-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </div>
+          <div class="rejected-text">
+            <strong>Connection Request Rejected</strong>
+            <p>Either you or your peer selected NO. Normal chat, attachments, and session requests are locked.</p>
+          </div>
+          <button type="button" id="reConnectBtn" class="btn-secondary-sm" style="margin-top: 0.5rem;">
+            Try Connecting Again
+          </button>
+        </div>
+
+        <!-- Main Workspace View (Unlocked when both select YES) -->
+        <div id="unlockedWorkspace" class="unlocked-workspace hidden-field">
+          <!-- Rich Live Chat & Session Control View -->
+          <div id="chatView" class="modal-view-section">
+            <!-- Active Session Header Bar -->
+            <div id="sessionHeaderBar" class="session-header-bar hidden-field">
+              <div class="session-info-left">
+                <span id="sessionTagBadge" class="session-tag active-session-tag">Active SkillSwap Session</span>
+                <span id="sessionProgressBadge" class="session-status-badge"></span>
+              </div>
+              <div class="session-actions-right">
+                <button type="button" id="markCompletedBtn" class="btn-complete-session">
+                  Complete
+                </button>
+              </div>
+            </div>
+
+            <!-- Sender Meeting Link Detection Prompt Banner -->
+            <div id="senderMeetingPrompt" class="sender-meeting-prompt hidden-field">
+              <div class="prompt-content-box">
+                <div class="prompt-text">
+                  <strong>Do you start the SkillSwap session through this link?</strong>
+                  <div id="detectedMeetingUrlText" class="detected-url-preview"></div>
+                </div>
+                <div class="prompt-actions">
+                  <button type="button" id="senderLinkYesBtn" class="btn-agree-yes-sm">YES</button>
+                  <button type="button" id="senderLinkNoBtn" class="btn-agree-no-sm">NO</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recipient Pending Session Invitation Banner -->
+            <div id="pendingSessionBanner" class="pending-session-banner hidden-field">
+              <div id="pendingSessionText" class="pending-session-text">
+                Session Invitation
+              </div>
+              <div id="pendingSessionActions" class="pending-session-actions hidden-field">
+                <button type="button" id="acceptSessionBtn" class="btn-agree-yes-sm">ACCEPT</button>
+                <button type="button" id="declineSessionBtn" class="btn-agree-no-sm">REJECT</button>
+              </div>
+            </div>
+
+            <!-- Successful Session Notification Banner -->
+            <div id="sessionCompletionBanner" class="session-completed-banner hidden-field">
+              <strong>SkillSwap Session Completed!</strong> Both users marked this exchange as complete.
+            </div>
+
+            <div class="chat-messages-container" id="chatMessagesContainer">
+              <!-- Dynamic chat messages injected here -->
+            </div>
+
+            <!-- Attachment Toolbar & Multi-Line Textarea Input Row -->
+            <div class="chat-controls-box">
+              <div class="attachment-bar-unified" style="margin-bottom: 0.5rem;">
+                <button type="button" id="attachmentBtn" class="attachment-trigger-btn" title="Add Attachment">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                  </svg>
+                </button>
+
+                <!-- Attachment Dropdown Popover -->
+                <div id="attachmentMenu" class="attachment-menu-popover hidden-field">
+                  <button type="button" id="attachImageBtn" class="attachment-menu-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    Image File
+                  </button>
+                  <button type="button" id="attachFileBtn" class="attachment-menu-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Document / PDF
+                  </button>
+                  <button type="button" id="attachLinkBtn" class="attachment-menu-item">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                    Web Link
+                  </button>
+                </div>
+
+                <!-- Hidden File Inputs -->
+                <input type="file" id="imageFileInput" class="hidden-field" accept="image/*">
+                <input type="file" id="docFileInput" class="hidden-field" accept=".pdf,.doc,.docx,.txt,.zip">
+              </div>
+
+              <!-- Link Insertion Popover (Hidden by default) -->
+              <div id="linkInputRow" class="link-input-popover hidden-field" style="margin-bottom: 0.5rem;">
+                <input type="url" id="linkUrlInput" class="form-input-sm" placeholder="Paste URL (e.g. https://github.com/...)">
+                <button type="button" id="confirmSendLinkBtn" class="btn-secondary-sm">Share Link</button>
+                <button type="button" id="cancelLinkBtn" class="close-popover-btn">&times;</button>
+              </div>
+
+              <div class="chat-input-row">
+                <textarea id="chatMessageInput" class="form-input chat-textarea" rows="3" placeholder="Type a message... (Shift+Enter for new line)"></textarea>
+                <button type="button" id="sendChatBtn" class="btn-primary-sm" style="height: 44px; align-self: flex-end;">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Preview Lightbox Modal -->
+  <div id="imageLightbox" class="modal-overlay lightbox-overlay" role="dialog">
+    <div class="lightbox-content">
+      <button id="closeLightboxBtn" class="close-lightbox-btn">&times;</button>
+      <img id="lightboxImg" src="" alt="Shared preview">
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-container">
+      <p class="footer-copy">© 2026 SkillSwap. 1-to-1 Skill Exchange Platform.</p>
+    </div>
+  </footer>
+
+  <!-- Toast Notification -->
+  <div id="toastNotification" class="toast-notification" aria-live="polite">
+    <div class="toast-content">
+      <div id="toastIcon" class="toast-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+      <span id="toastMessage">Exchange invitation sent!</span>
+    </div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="store.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
