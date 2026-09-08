@@ -3,6 +3,17 @@
  * Manages profile display, real-time matching engine for verified users, grouped notifications, rich chat attachments, and Session-based exchange lifecycle & completion.
  */
 
+// Handle Back-Forward Cache (bfcache) navigation
+window.addEventListener('pageshow', (event) => {
+  const store = window.SkillSwapStore || window.SkillShareStore;
+  if (store) {
+    const user = store.requireAuth();
+    if (!user) {
+      window.location.replace('auth.html');
+    }
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   const store = window.SkillSwapStore || window.SkillShareStore;
 
@@ -13,14 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const currentProfile = store.getCurrentProfile(myEmail);
   if (!currentProfile) {
-    window.location.href = 'profile.html';
+    window.location.replace('profile.html');
     return;
   }
 
   // 2. Header & Profile Elements
   const dashUserGreeting = document.getElementById('dashUserGreeting');
   const dashLogoutBtn = document.getElementById('dashLogoutBtn');
-  if (dashUserGreeting) dashUserGreeting.textContent = `Logged in as ${currentProfile.name}`;
   if (dashLogoutBtn) dashLogoutBtn.addEventListener('click', () => store.logout());
 
   const welcomeTitle = document.getElementById('welcomeTitle');
@@ -30,40 +40,46 @@ document.addEventListener('DOMContentLoaded', () => {
   const dashTeachSkills = document.getElementById('dashTeachSkills');
   const dashLearnSkills = document.getElementById('dashLearnSkills');
   const dashAvailability = document.getElementById('dashAvailability');
-
-  if (welcomeTitle) welcomeTitle.textContent = `Welcome back, ${currentProfile.name.split(' ')[0]}!`;
-  if (dashName) dashName.textContent = currentProfile.name;
-  if (dashRole) dashRole.textContent = currentProfile.role || 'Skill Explorer';
-  if (dashBio) dashBio.textContent = currentProfile.bio || 'No bio added yet.';
-  if (dashAvailability) dashAvailability.textContent = (currentProfile.availability || []).join(', ') || 'Flexible';
-
   const dashUserAvatar = document.getElementById('dashUserAvatar');
-  if (dashUserAvatar) {
-    const initials = (currentProfile.name || 'User').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-    dashUserAvatar.textContent = initials;
+
+  function updateProfileUI() {
+    const freshProfile = store.getCurrentProfile(myEmail) || currentProfile;
+    if (!freshProfile) return;
+
+    if (dashUserGreeting) dashUserGreeting.textContent = `Logged in as ${freshProfile.name}`;
+    if (welcomeTitle) welcomeTitle.textContent = `Welcome back, ${freshProfile.name.split(' ')[0]}!`;
+    if (dashName) dashName.textContent = freshProfile.name;
+    if (dashRole) dashRole.textContent = freshProfile.role || 'Skill Explorer';
+    if (dashBio) dashBio.textContent = freshProfile.bio || 'No bio added yet.';
+    if (dashAvailability) dashAvailability.textContent = (freshProfile.availability || []).join(', ') || 'Flexible';
+
+    if (dashUserAvatar) {
+      const initials = (freshProfile.name || 'User').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+      dashUserAvatar.textContent = initials;
+    }
+
+    if (dashTeachSkills) {
+      dashTeachSkills.innerHTML = '';
+      (freshProfile.teachSkills || []).forEach(skill => {
+        const tag = document.createElement('span');
+        tag.className = 'dash-tag teach-tag';
+        tag.textContent = skill;
+        dashTeachSkills.appendChild(tag);
+      });
+    }
+
+    if (dashLearnSkills) {
+      dashLearnSkills.innerHTML = '';
+      (freshProfile.learnSkills || []).forEach(skill => {
+        const tag = document.createElement('span');
+        tag.className = 'dash-tag learn-tag';
+        tag.textContent = skill;
+        dashLearnSkills.appendChild(tag);
+      });
+    }
   }
 
-  // Render Teach Skills
-  if (dashTeachSkills) {
-    dashTeachSkills.innerHTML = '';
-    (currentProfile.teachSkills || []).forEach(skill => {
-      const tag = document.createElement('span');
-      tag.className = 'dash-tag teach-tag';
-      tag.textContent = skill;
-      dashTeachSkills.appendChild(tag);
-    });
-  }
-
-  // Render Learn Skills
-  if (dashLearnSkills) {
-    dashLearnSkills.innerHTML = '';
-    (currentProfile.learnSkills || []).forEach(skill => {
-      const tag = document.createElement('span');
-      tag.className = 'dash-tag learn-tag';
-      tag.textContent = skill;
-      dashLearnSkills.appendChild(tag);
-    });
-  }
+  updateProfileUI();
 
   // 2b. Total Sessions Metric Counter System
   function updateTotalSessionsUI() {
@@ -400,11 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatMessageInput = document.getElementById('chatMessageInput');
   const sendChatBtn = document.getElementById('sendChatBtn');
 
-  const attachImageBtn = document.getElementById('attachImageBtn');
-  const attachFileBtn = document.getElementById('attachFileBtn');
   const attachLinkBtn = document.getElementById('attachLinkBtn');
-  const imageFileInput = document.getElementById('imageFileInput');
-  const docFileInput = document.getElementById('docFileInput');
 
   const linkInputRow = document.getElementById('linkInputRow');
   const linkUrlInput = document.getElementById('linkUrlInput');
@@ -576,12 +588,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeSess = store.getActiveSession(activeMatchPeer.email);
     const pendingReq = store.getPendingSessionRequest(activeMatchPeer.email);
 
+    // Keep Session Header Bar ALWAYS visible for connected peers in chat
+    if (sessionHeaderBar) sessionHeaderBar.classList.remove('hidden-field');
+
     if (activeSess) {
       if (pendingSessionBanner) pendingSessionBanner.classList.add('hidden-field');
       if (senderMeetingPrompt) senderMeetingPrompt.classList.add('hidden-field');
       if (sessionCompletionBanner) sessionCompletionBanner.classList.add('hidden-field');
-
-      if (sessionHeaderBar) sessionHeaderBar.classList.remove('hidden-field');
 
       if (sessionTagBadge) {
         const sessNum = store.getPeerSessionNumber(activeSess.id, activeMatchPeer.email);
@@ -589,8 +602,11 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionTagBadge.className = 'session-tag active-session-tag';
       }
 
-      const completedBy = activeSess.completedBy || [];
-      const mineClicked = completedBy.includes(currentProfile.email);
+      const completedBy = (activeSess.completedBy || []).map(e => (e || '').toLowerCase());
+      const myEmail = (currentProfile.email || '').toLowerCase();
+      const mineClicked = completedBy.includes(myEmail) ||
+                          (myEmail === (activeSess.user1 || '').toLowerCase() && activeSess.user1Completed) ||
+                          (myEmail === (activeSess.user2 || '').toLowerCase() && activeSess.user2Completed);
 
       if (markCompletedBtn) {
         markCompletedBtn.classList.remove('hidden-field');
@@ -610,8 +626,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
     } else if (pendingReq) {
-      if (sessionHeaderBar) sessionHeaderBar.classList.add('hidden-field');
-      if (sessionCompletionBanner) sessionCompletionBanner.classList.add('hidden-field');
+      if (sessionTagBadge) {
+        const sessNum = store.getPeerSessionNumber(null, activeMatchPeer.email);
+        sessionTagBadge.textContent = `Pending Session Invite #${sessNum}`;
+        sessionTagBadge.className = 'session-tag pending-session-tag';
+      }
+
+      if (markCompletedBtn) {
+        markCompletedBtn.classList.add('hidden-field');
+      }
+
+      if (sessionProgressBadge) {
+        sessionProgressBadge.textContent = `(Awaiting Link Acceptance)`;
+      }
 
       if (pendingSessionBanner) pendingSessionBanner.classList.remove('hidden-field');
 
@@ -628,8 +655,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
     } else {
-      if (sessionHeaderBar) sessionHeaderBar.classList.add('hidden-field');
+      // Connected mode (No active or pending session)
+      const nextSessNum = store.getPeerSessionNumber(null, activeMatchPeer.email);
+
+      if (sessionTagBadge) {
+        sessionTagBadge.textContent = `Connected — Ready for Session #${nextSessNum}`;
+        sessionTagBadge.className = 'session-tag idle-session-tag';
+      }
+
       if (pendingSessionBanner) pendingSessionBanner.classList.add('hidden-field');
+
+      if (markCompletedBtn) {
+        markCompletedBtn.classList.add('hidden-field');
+      }
+
+      if (sessionProgressBadge) {
+        sessionProgressBadge.textContent = `(Paste meeting link to start)`;
+      }
     }
   }
 
@@ -698,18 +740,27 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (markCompletedBtn) {
-    markCompletedBtn.addEventListener('click', () => {
+    markCompletedBtn.addEventListener('click', async () => {
       if (!activeMatchPeer) return;
-      const res = store.markSessionCompleted(activeMatchPeer.email);
-      if (res.success) {
-        if (res.isFullyCompleted) {
-          showToast('SkillSwap Session Completed! Both users marked exchange as complete.');
+      markCompletedBtn.disabled = true;
+      try {
+        const res = await store.markSessionCompleted(activeMatchPeer.email);
+        if (res.success) {
+          if (res.isFullyCompleted) {
+            showToast('SkillSwap Session Completed! Both users marked exchange as complete.');
+          } else {
+            showToast('Marked completed by you! Waiting for peer confirmation.');
+          }
+          updateSessionUI();
+          renderChatMessages();
+          updateTotalSessionsUI();
         } else {
-          showToast('Marked completed by you! Waiting for peer confirmation.');
+          showToast(res.message || 'Could not complete session.');
+          markCompletedBtn.disabled = false;
         }
-        updateSessionUI();
-        renderChatMessages();
-        updateTotalSessionsUI();
+      } catch (err) {
+        showToast('Error completing session.');
+        markCompletedBtn.disabled = false;
       }
     });
   }
@@ -720,21 +771,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const msgs = Array.isArray(explicitMsgs) ? explicitMsgs : store.getChatMessages(activeMatchPeer.email, myEmail);
 
     chatMessagesContainer.innerHTML = '';
-    if (msgs.length === 0) {
+
+    const completedSessions = store.getCompletedSessionsForPair(activeMatchPeer.email, myEmail);
+    const activeSess = store.getActiveSession(activeMatchPeer.email, myEmail);
+
+    if (msgs.length === 0 && completedSessions.length === 0 && !activeSess) {
       chatMessagesContainer.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem 0; font-size: 0.85rem;">No chat messages yet. Send a message or paste a meeting link to start exchanging!</div>`;
       return;
     }
 
-    let lastSessionId = null;
+    const renderedStartDividers = new Set();
+    const renderedCompletionDividers = new Set();
+    let currentSessionId = null;
+
+    function renderCompletedDividerFor(sessId) {
+      if (renderedCompletionDividers.has(sessId)) return;
+      const compIdx = completedSessions.findIndex(s => s.id === sessId);
+      if (compIdx !== -1) {
+        renderedCompletionDividers.add(sessId);
+        const sessNum = compIdx + 1;
+        const compDivider = document.createElement('div');
+        compDivider.className = 'session-chat-divider completed-divider';
+        compDivider.innerHTML = `<span>SkillSwap Session #${sessNum} Completed ✓</span>`;
+        chatMessagesContainer.appendChild(compDivider);
+      }
+    }
 
     msgs.forEach(m => {
-      if (m.sessionId && m.sessionId !== lastSessionId) {
-        lastSessionId = m.sessionId;
-        const divider = document.createElement('div');
-        divider.className = 'session-chat-divider';
-        const sessNum = store.getPeerSessionNumber(m.sessionId, activeMatchPeer.email);
-        divider.innerHTML = `<span>SkillSwap Session #${sessNum}</span>`;
-        chatMessagesContainer.appendChild(divider);
+      // Ignore legacy chat message wrappers for session completion
+      if (m.type === 'session_completion') return;
+
+      if (m.sessionId && m.sessionId !== currentSessionId) {
+        if (currentSessionId) {
+          renderCompletedDividerFor(currentSessionId);
+        }
+        currentSessionId = m.sessionId;
+
+        if (!renderedStartDividers.has(m.sessionId)) {
+          renderedStartDividers.add(m.sessionId);
+          const sessNum = store.getPeerSessionNumber(m.sessionId, activeMatchPeer.email, myEmail);
+          const divider = document.createElement('div');
+          divider.className = 'session-chat-divider';
+          divider.innerHTML = `<span>SkillSwap Session #${sessNum}</span>`;
+          chatMessagesContainer.appendChild(divider);
+        }
       }
 
       const bubble = document.createElement('div');
@@ -786,6 +866,22 @@ document.addEventListener('DOMContentLoaded', () => {
       bubble.appendChild(timeSpan);
 
       chatMessagesContainer.appendChild(bubble);
+    });
+
+    if (currentSessionId) {
+      renderCompletedDividerFor(currentSessionId);
+    }
+
+    // Render completion dividers for any completed sessions not yet rendered
+    completedSessions.forEach((s, index) => {
+      if (!renderedCompletionDividers.has(s.id)) {
+        renderedCompletionDividers.add(s.id);
+        const sessNum = index + 1;
+        const compDivider = document.createElement('div');
+        compDivider.className = 'session-chat-divider completed-divider';
+        compDivider.innerHTML = `<span>SkillSwap Session #${sessNum} Completed ✓</span>`;
+        chatMessagesContainer.appendChild(compDivider);
+      }
     });
 
     chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
@@ -870,80 +966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (attachImageBtn && imageFileInput) {
-    attachImageBtn.addEventListener('click', () => {
-      if (attachmentMenu) attachmentMenu.classList.add('hidden-field');
-      imageFileInput.click();
-    });
-    imageFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file || !activeMatchPeer) return;
 
-      if (file.size > 10 * 1024 * 1024) {
-        showToast('Image size exceeds 10MB limit.');
-        imageFileInput.value = '';
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = async function(evt) {
-        showToast('Sending image...');
-        const res = await store.sendChatMessage(activeMatchPeer.email, {
-          type: 'image',
-          fileData: evt.target.result,
-          fileName: file.name,
-          text: chatMessageInput ? chatMessageInput.value.trim() : ''
-        }, myEmail);
-        if (res && res.success === false && res.message) {
-          showToast(res.message);
-        }
-        if (chatMessageInput) resetChatInput();
-        imageFileInput.value = '';
-        renderChatMessages();
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  if (attachFileBtn && docFileInput) {
-    attachFileBtn.addEventListener('click', () => {
-      if (attachmentMenu) attachmentMenu.classList.add('hidden-field');
-      docFileInput.click();
-    });
-    docFileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file || !activeMatchPeer) return;
-
-      if (file.size > 10 * 1024 * 1024) {
-        showToast('File size exceeds 10MB limit.');
-        docFileInput.value = '';
-        return;
-      }
-
-      const formattedSize = file.size > (1024 * 1024)
-        ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
-        : (file.size / 1024).toFixed(1) + ' KB';
-
-      const reader = new FileReader();
-      reader.onload = async function(evt) {
-        showToast('Sending file...');
-        const res = await store.sendChatMessage(activeMatchPeer.email, {
-          type: 'file',
-          fileData: evt.target.result,
-          fileName: file.name,
-          fileSize: formattedSize,
-          text: chatMessageInput ? chatMessageInput.value.trim() : ''
-        }, myEmail);
-        if (res && res.success === false && res.message) {
-          showToast(res.message);
-        }
-        if (chatMessageInput) resetChatInput();
-        docFileInput.value = '';
-        renderChatMessages();
-      };
-      reader.readAsDataURL(file);
-    });
-  }
 
   if (attachLinkBtn && linkInputRow) {
     attachLinkBtn.addEventListener('click', () => {
@@ -1095,6 +1118,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   window.addEventListener('skillshare_user_status_changed', () => {
+    store.requireAuth();
+    updateProfileUI();
     renderMatches();
     updateTotalSessionsUI();
   });
@@ -1105,6 +1130,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (connectModal.classList.contains('active') && activeMatchPeer) {
       updateModalViewState();
     }
+  });
+
+  window.addEventListener('skillshare_session_updated', () => {
+    if (connectModal.classList.contains('active') && activeMatchPeer) {
+      updateSessionUI();
+      renderChatMessages();
+    }
+    updateTotalSessionsUI();
   });
 });
 

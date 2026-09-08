@@ -3,6 +3,17 @@
  * Handles profile creation and editing, tag management (max 2 skills each), and availability selection.
  */
 
+// Handle Back-Forward Cache (bfcache) navigation
+window.addEventListener('pageshow', (event) => {
+  const store = window.SkillSwapStore || window.SkillShareStore;
+  if (store) {
+    const user = store.requireAuth();
+    if (!user) {
+      window.location.replace('auth.html');
+    }
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   const store = window.SkillSwapStore || window.SkillShareStore;
 
@@ -70,8 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (profileNameInput) profileNameInput.value = existingProfile.name || currentUser.name;
     if (profileRoleInput) profileRoleInput.value = existingProfile.role || '';
     if (profileBioInput) profileBioInput.value = existingProfile.bio || '';
-    (existingProfile.teachSkills || []).slice(0, 1).forEach(s => teachSkills.add(s));
-    (existingProfile.learnSkills || []).slice(0, 1).forEach(s => learnSkills.add(s));
+    (existingProfile.teachSkills || []).slice(0, 2).forEach(s => teachSkills.add(s));
+    (existingProfile.learnSkills || []).slice(0, 2).forEach(s => learnSkills.add(s));
     (existingProfile.availability || []).forEach(a => availability.add(a));
   } else {
     if (profileNameInput) profileNameInput.value = currentUser.name;
@@ -120,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = customTeachInput.value.trim();
     if (!val) return;
 
-    if (teachSkills.size >= 1) {
-      showToast('You can select a maximum of 1 skill to teach at once.', true);
+    if (teachSkills.size >= 2) {
+      showToast('You can select a maximum of 2 skills to teach at once.', true);
       return;
     }
 
@@ -135,8 +146,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = customLearnInput.value.trim();
     if (!val) return;
 
-    if (learnSkills.size >= 1) {
-      showToast('You can select a maximum of 1 skill to learn at once.', true);
+    if (learnSkills.size >= 2) {
+      showToast('You can select a maximum of 2 skills to learn at once.', true);
       return;
     }
 
@@ -193,8 +204,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (teachSkills.size > 1) {
-        showToast('Please select a maximum of 1 skill to teach.', true);
+      if (teachSkills.size > 2) {
+        showToast('Please select a maximum of 2 skills to teach.', true);
         return;
       }
 
@@ -203,8 +214,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      if (learnSkills.size > 1) {
-        showToast('Please select a maximum of 1 skill to learn.', true);
+      if (learnSkills.size > 2) {
+        showToast('Please select a maximum of 2 skills to learn.', true);
         return;
       }
 

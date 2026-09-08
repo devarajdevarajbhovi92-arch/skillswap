@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentFilter = 'all';
   let searchQuery = '';
   let pendingDeleteEmail = null;
+  let pendingDeleteUid = null;
 
   function showToast(msg) {
     if (!toastNotification || !toastMessage) return;
@@ -153,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ? `<button type="button" class="btn-action unblock-btn" data-email="${u.email}">Unblock</button>`
               : `<button type="button" class="btn-action block-btn" data-email="${u.email}">Block</button>`
             }
-            <button type="button" class="btn-action delete-btn" data-email="${u.email}" data-name="${u.name}">Delete</button>
+            <button type="button" class="btn-action delete-btn" data-email="${u.email}" data-uid="${u.userId || u.uid || ''}" data-name="${u.name}">Delete</button>
           </div>
         </td>
       `;
@@ -163,16 +164,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const deleteBtn = tr.querySelector('.delete-btn');
 
       if (blockBtn) {
-        blockBtn.addEventListener('click', () => {
-          store.updateUserAccountStatus(u.email, 'blocked');
+        blockBtn.addEventListener('click', async () => {
+          await store.updateUserAccountStatus(u.email, 'blocked');
           showToast(`Account for ${u.name} has been blocked.`);
           renderUserDirectory();
         });
       }
 
       if (unblockBtn) {
-        unblockBtn.addEventListener('click', () => {
-          store.updateUserAccountStatus(u.email, 'approved');
+        unblockBtn.addEventListener('click', async () => {
+          await store.updateUserAccountStatus(u.email, 'approved');
           showToast(`Account for ${u.name} has been unblocked.`);
           renderUserDirectory();
         });
@@ -181,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (deleteBtn) {
         deleteBtn.addEventListener('click', () => {
           pendingDeleteEmail = u.email;
+          pendingDeleteUid = u.userId || u.uid || null;
           if (deleteModalTargetName) deleteModalTargetName.textContent = u.name;
           deleteUserModal.classList.add('active');
         });
@@ -200,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sessions.length === 0) {
       sessionTableBody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
+          <td colspan="7" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted);">
             <div style="font-weight: 700; color: var(--text-main);">No exchange sessions recorded yet</div>
             <div style="font-size: 0.85rem; margin-top: 0.25rem;">Sessions will appear here as users connect and complete skill swaps.</div>
           </td>
@@ -242,7 +244,20 @@ document.addEventListener('DOMContentLoaded', () => {
         <td style="font-size: 0.8rem; color: var(--text-muted);">
           ${s.completedAt ? `${new Date(s.completedAt).toLocaleDateString()} ${new Date(s.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '—'}
         </td>
+
+        <td>
+          <button type="button" class="btn-action delete-btn delete-session-btn" data-id="${s.id}">Delete</button>
+        </td>
       `;
+
+      const deleteSessBtn = tr.querySelector('.delete-session-btn');
+      if (deleteSessBtn) {
+        deleteSessBtn.addEventListener('click', () => {
+          store.deleteSession(s.id);
+          showToast('Session deleted successfully.');
+          renderUserDirectory();
+        });
+      }
 
       sessionTableBody.appendChild(tr);
     });
@@ -252,20 +267,33 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeDeleteModal() {
     deleteUserModal.classList.remove('active');
     pendingDeleteEmail = null;
+    pendingDeleteUid = null;
   }
 
   if (closeDeleteModalBtn) closeDeleteModalBtn.addEventListener('click', closeDeleteModal);
   if (cancelDeleteBtn) cancelDeleteBtn.addEventListener('click', closeDeleteModal);
 
   if (confirmDeleteBtn) {
-    confirmDeleteBtn.addEventListener('click', () => {
+    confirmDeleteBtn.addEventListener('click', async () => {
       if (!pendingDeleteEmail) return;
 
-      const res = store.deleteUserAccount(pendingDeleteEmail);
-      if (res.success) {
-        showToast('User account deleted permanently.');
-        closeDeleteModal();
-        renderUserDirectory();
+      const targetEmail = pendingDeleteEmail;
+      const targetUid = pendingDeleteUid;
+      confirmDeleteBtn.disabled = true;
+      confirmDeleteBtn.textContent = 'Deleting...';
+
+      try {
+        const res = await store.deleteUserAccount(targetEmail, targetUid);
+        if (res.success) {
+          showToast(`Account (${targetEmail}) has been permanently deleted.`);
+          closeDeleteModal();
+          renderUserDirectory();
+        }
+      } catch (err) {
+        showToast('Error deleting user: ' + (err.message || 'Unknown error'));
+      } finally {
+        confirmDeleteBtn.disabled = false;
+        confirmDeleteBtn.textContent = 'Delete Permanently';
       }
     });
   }

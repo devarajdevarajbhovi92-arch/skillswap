@@ -15,6 +15,7 @@
   const SESSIONS_KEY = 'skillswap_sessions';
   const CONNECTIONS_KEY = 'skillswap_connections';
   const SESSION_REQUESTS_KEY = 'skillswap_session_requests';
+  const DELETED_USERS_KEY = 'skillswap_deleted_users';
 
   const ADMINS_KEY = 'skillswap_admins';
   const ADMIN_SESSION_KEY = 'skillswap_admin_session';
@@ -41,6 +42,27 @@
 
   function saveCachedUsers(users) {
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  }
+
+  function getCachedDeletedUsers() {
+    try {
+      return JSON.parse(localStorage.getItem(DELETED_USERS_KEY)) || {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveCachedDeletedUsers(deletedMap) {
+    try {
+      localStorage.setItem(DELETED_USERS_KEY, JSON.stringify(deletedMap));
+    } catch (e) {}
+  }
+
+  function isUserDeleted(email) {
+    if (!email) return false;
+    const cleanEmail = email.trim().toLowerCase();
+    const deletedMap = getCachedDeletedUsers();
+    return !!deletedMap[cleanEmail];
   }
 
   function getCachedProfiles() {
@@ -171,37 +193,115 @@
     if (!db || firestoreListenersAttached) return;
     firestoreListenersAttached = true;
 
-    // 1. Listen to Users Collection
+    // 0. Listen to Deleted Users Collection
+    db.collection('deleted_users').onSnapshot((snapshot) => {
+      const deletedMap = getCachedDeletedUsers();
+      snapshot.forEach(doc => {
+        const email = doc.id.toLowerCase();
+        deletedMap[email] = true;
+      });
+      saveCachedDeletedUsers(deletedMap);
+
+      const users = getCachedUsers();
+      const profiles = getCachedProfiles();
+      let changed = false;
+      Object.keys(deletedMap).forEach(email => {
+        if (users[email]) { delete users[email]; changed = true; }
+        if (profiles[email]) { delete profiles[email]; changed = true; }
+      });
+      if (changed) {
+        saveCachedUsers(users);
+        saveCachedProfiles(profiles);
+      }
+
+      const currentSess = SkillSwapStore.getCurrentSession();
+      if (currentSess && (deletedMap[currentSess] || isUserDeleted(currentSess))) {
+        const auth = getAuth();
+        if (auth && auth.currentUser) auth.signOut().catch(() => {});
+        alert('Your account has been permanently deleted by an administrator.');
+        SkillSwapStore.logout();
+      }
+
+      window.dispatchEvent(new CustomEvent('skillshare_user_deleted', { detail: {} }));
+      window.dispatchEvent(new CustomEvent('skillshare_user_status_changed', { detail: {} }));
+    }, err => {
+      console.warn('Deleted users listener notice:', err.message);
+    });
+
+    // 1. Listen to Users Collection (Reconciles Local Cache from Live Firestore State)
     db.collection('users').onSnapshot((snapshot) => {
+      const activeUsersInFirestore = new Set();
       const users = getCachedUsers();
       const profiles = getCachedProfiles();
 
       snapshot.forEach(doc => {
         const data = doc.data();
-        const email = (data.email || doc.id).toLowerCase();
+        const email = (data.email || (doc.id.includes('@') ? doc.id : '')).toLowerCase();
+        const uid = data.uid || doc.id;
+        if (!email || data.accountStatus === 'deleted' || isUserDeleted(email)) return;
+
+        activeUsersInFirestore.add(email);
+
+        const existingProf = profiles[email] || {};
+        const hasDataSkills = (data.teachSkills && data.teachSkills.length > 0) || (data.learnSkills && data.learnSkills.length > 0) || (data.availability && data.availability.length > 0);
+        const hasExistingSkills = (existingProf.teachSkills && existingProf.teachSkills.length > 0) || (existingProf.learnSkills && existingProf.learnSkills.length > 0) || (existingProf.availability && existingProf.availability.length > 0);
+
         users[email] = {
-          name: data.name || email.split('@')[0],
+          uid: uid || existingProf.uid || email,
+          userId: uid || existingProf.uid || email,
+          name: data.name || (users[email] && users[email].name) || email.split('@')[0],
           email: email,
-          password: data.password || '',
+          password: data.password || (users[email] && users[email].password) || '',
           isVerified: data.isVerified !== false,
-          accountStatus: data.accountStatus || 'approved',
-          createdAt: data.createdAt || new Date().toISOString()
+          accountStatus: data.accountStatus || (users[email] && users[email].accountStatus) || 'approved',
+          createdAt: data.createdAt || (users[email] && users[email].createdAt) || new Date().toISOString()
         };
 
+        const teachSkills = hasDataSkills ? (data.teachSkills || []) : (hasExistingSkills ? existingProf.teachSkills : (data.teachSkills || []));
+        const learnSkills = hasDataSkills ? (data.learnSkills || []) : (hasExistingSkills ? existingProf.learnSkills : (data.learnSkills || []));
+        const availability = hasDataSkills ? (data.availability || []) : (hasExistingSkills ? existingProf.availability : (data.availability || []));
+
         profiles[email] = {
+          uid: uid || existingProf.uid || email,
           email: email,
-          name: data.name || email.split('@')[0],
-          role: data.role || 'Skill Explorer',
-          bio: data.bio || '',
-          teachSkills: data.teachSkills || [],
-          learnSkills: data.learnSkills || [],
-          availability: data.availability || [],
-          updatedAt: data.updatedAt || new Date().toISOString()
+          name: data.name || existingProf.name || email.split('@')[0],
+          role: data.role || existingProf.role || 'Skill Explorer',
+          bio: (data.bio !== undefined && data.bio !== '') ? data.bio : (existingProf.bio || ''),
+          teachSkills: teachSkills,
+          learnSkills: learnSkills,
+          availability: availability,
+          updatedAt: data.updatedAt || existingProf.updatedAt || new Date().toISOString()
         };
       });
 
+      // Purge any cached user no longer present in Firestore snapshot
+      Object.keys(users).forEach(email => {
+        if (!activeUsersInFirestore.has(email)) {
+          delete users[email];
+          delete profiles[email];
+        }
+      });
+
+      // Reconcile local cache from live Firestore state
       saveCachedUsers(users);
       saveCachedProfiles(profiles);
+
+      const currentSess = SkillSwapStore.getCurrentSession();
+      if (currentSess) {
+        const currentUserObj = users[currentSess];
+        if (!currentUserObj || isUserDeleted(currentSess)) {
+          const auth = getAuth();
+          if (auth && auth.currentUser) auth.signOut().catch(() => {});
+          alert('Your account has been permanently deleted by an administrator.');
+          SkillSwapStore.logout();
+        } else if (currentUserObj.accountStatus === 'blocked') {
+          const auth = getAuth();
+          if (auth && auth.currentUser) auth.signOut().catch(() => {});
+          alert('Your account is currently blocked by an administrator.');
+          SkillSwapStore.logout();
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('skillshare_user_status_changed', { detail: {} }));
     }, err => {
       console.warn('Users listener notice:', err.message);
@@ -305,17 +405,27 @@
     getCurrentSession: function() {
       try {
         const sess = sessionStorage.getItem(SESSION_KEY);
-        if (sess) return sess.trim().toLowerCase();
+        if (sess) {
+          const clean = sess.trim().toLowerCase();
+          if (isUserDeleted(clean)) return null;
+          return clean;
+        }
       } catch (e) {}
 
       const auth = getAuth();
       if (auth && auth.currentUser && auth.currentUser.email) {
-        return auth.currentUser.email.toLowerCase();
+        const authEmail = auth.currentUser.email.toLowerCase();
+        if (isUserDeleted(authEmail)) return null;
+        return authEmail;
       }
 
       try {
         const local = localStorage.getItem(SESSION_KEY);
-        if (local) return local.trim().toLowerCase();
+        if (local) {
+          const cleanLocal = local.trim().toLowerCase();
+          if (isUserDeleted(cleanLocal)) return null;
+          return cleanLocal;
+        }
       } catch (e) {}
 
       return null;
@@ -323,40 +433,53 @@
 
     getCurrentUser: function(callerEmail) {
       const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
-      if (!email) return null;
+      if (!email || isUserDeleted(email)) return null;
       const users = getCachedUsers();
-      if (users[email]) return users[email];
-      const profiles = getCachedProfiles();
-      if (profiles[email]) {
-        return {
-          email: email,
-          name: profiles[email].name || email.split('@')[0],
-          accountStatus: 'approved',
-          isVerified: true
-        };
+      if (users[email]) {
+        if (users[email].accountStatus === 'deleted') return null;
+        return users[email];
       }
-      return {
-        email: email,
-        name: email.split('@')[0],
-        accountStatus: 'approved',
-        isVerified: true
-      };
+
+      // Fallback if Firebase Auth user is signed in but user doc wasn't loaded in cache yet
+      const auth = getAuth();
+      if (auth && auth.currentUser && auth.currentUser.email && auth.currentUser.email.toLowerCase() === email) {
+        const fallbackUser = {
+          name: auth.currentUser.displayName || email.split('@')[0],
+          email: email,
+          password: '',
+          isVerified: true,
+          accountStatus: 'approved',
+          createdAt: new Date().toISOString()
+        };
+        users[email] = fallbackUser;
+        saveCachedUsers(users);
+        return fallbackUser;
+      }
+
+      return null;
     },
 
     getCurrentProfile: function(callerEmail) {
       const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
-      if (!email) return null;
+      if (!email || isUserDeleted(email)) return null;
+      const user = this.getCurrentUser(email);
+      if (!user) return null;
+
       const profiles = getCachedProfiles();
       if (profiles[email]) return profiles[email];
-      return {
+
+      const fallbackProfile = {
         email: email,
-        name: email.split('@')[0],
+        name: user.name || email.split('@')[0],
         role: 'Skill Explorer',
         bio: '',
         teachSkills: [],
         learnSkills: [],
         availability: []
       };
+      profiles[email] = fallbackProfile;
+      saveCachedProfiles(profiles);
+      return fallbackProfile;
     },
 
     // Current Active Admin Session
@@ -419,54 +542,88 @@
     // User Authentication
     registerAccount: async function(name, email, password) {
       const cleanEmail = email.trim().toLowerCase();
-      const users = getCachedUsers();
+      const db = getDb();
+      const auth = getAuth();
 
-      if (users[cleanEmail]) {
-        return { success: false, message: 'An account with this email already exists. Please Log In.' };
+      // Single Source of Truth: Check Cloud Firestore for existing active user with this email
+      if (db) {
+        try {
+          const snap = await db.collection('users').where('email', '==', cleanEmail).get();
+          let activeFound = false;
+          snap.forEach(doc => {
+            if (doc.data().accountStatus !== 'deleted') activeFound = true;
+          });
+          if (activeFound) {
+            return { success: false, message: 'An account with this email already exists. Please Log In.' };
+          }
+        } catch (e) {}
       }
 
-      const newUser = {
+      // Create new user in Firebase Auth
+      let authUser = null;
+      if (auth) {
+        try {
+          const cred = await auth.createUserWithEmailAndPassword(cleanEmail, password);
+          authUser = cred ? cred.user : null;
+          if (authUser) {
+            await authUser.updateProfile({ displayName: name.trim() }).catch(() => {});
+          }
+        } catch (err) {
+          if (err.code === 'auth/email-already-in-use') {
+            let reclaimedUser = null;
+            try {
+              const loginCred = await auth.signInWithEmailAndPassword(cleanEmail, password);
+              reclaimedUser = loginCred ? loginCred.user : auth.currentUser;
+            } catch (e) {
+              const users = getCachedUsers();
+              const cachedPass = (users[cleanEmail] && users[cleanEmail].password) || '';
+              if (cachedPass) {
+                try {
+                  const loginCred = await auth.signInWithEmailAndPassword(cleanEmail, cachedPass);
+                  reclaimedUser = loginCred ? loginCred.user : auth.currentUser;
+                } catch (err2) {}
+              }
+            }
+
+            if (reclaimedUser) {
+              try {
+                // Delete old orphaned Auth user so a brand new UID can be generated
+                await reclaimedUser.delete();
+                const freshCred = await auth.createUserWithEmailAndPassword(cleanEmail, password);
+                authUser = freshCred ? freshCred.user : null;
+              } catch (delErr) {
+                authUser = reclaimedUser;
+                if (password) await authUser.updatePassword(password).catch(() => {});
+                await authUser.updateProfile({ displayName: name.trim() }).catch(() => {});
+              }
+            } else {
+              return { success: false, message: 'An account with this email already exists. Please Log In.' };
+            }
+          } else {
+            return { success: false, message: err.message || 'Error creating account.' };
+          }
+        }
+      }
+
+      const uid = authUser ? authUser.uid : ('user_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9));
+
+      const freshUser = {
+        uid: uid,
+        userId: uid,
         name: name.trim(),
         email: cleanEmail,
         password: password,
         isVerified: true,
         accountStatus: 'approved',
+        totalSessionsCompleted: 0,
         createdAt: new Date().toISOString()
       };
 
-      // Optimistic save
-      users[cleanEmail] = newUser;
-      saveCachedUsers(users);
-      localStorage.setItem(SESSION_KEY, cleanEmail);
-      try { sessionStorage.setItem(SESSION_KEY, cleanEmail); } catch (e) {}
-
-      // Cloud Firebase Register
-      const auth = getAuth();
-      const db = getDb();
-      if (auth) {
-        try {
-          const cred = await auth.createUserWithEmailAndPassword(cleanEmail, password);
-          if (cred && cred.user) {
-            await cred.user.updateProfile({ displayName: name.trim() });
-            newUser.uid = cred.user.uid;
-          }
-        } catch (err) {
-          if (err.code === 'auth/email-already-in-use') {
-            try {
-              await auth.signInWithEmailAndPassword(cleanEmail, password);
-            } catch (e) {
-              return { success: false, message: 'This email is already registered in Firebase. Please log in.' };
-            }
-          } else {
-            console.error('Firebase Auth Register Error:', err);
-            return { success: false, message: err.message || 'Could not register account.' };
-          }
-        }
-      }
-
+      // Write user document to Cloud Firestore keyed by UID
       if (db) {
         try {
-          await db.collection('users').doc(cleanEmail).set({
+          await db.collection('users').doc(uid).set({
+            uid: uid,
             name: name.trim(),
             email: cleanEmail,
             role: 'Skill Explorer',
@@ -477,74 +634,172 @@
             accountStatus: 'approved',
             isVerified: true,
             totalSessionsCompleted: 0,
-            createdAt: new Date().toISOString()
-          }, { merge: true });
+            createdAt: freshUser.createdAt
+          });
+
+          // Clean up legacy email-keyed doc if any
+          await db.collection('users').doc(cleanEmail).delete().catch(() => {});
+          await db.collection('deleted_users').doc(cleanEmail).delete().catch(() => {});
         } catch (dbErr) {
           console.warn('Firestore write notice:', dbErr);
         }
       }
 
-      return { success: true, requiresVerification: false, user: newUser, hasProfile: false };
+      // Update local cache
+      const users = getCachedUsers();
+      const profiles = getCachedProfiles();
+      users[cleanEmail] = freshUser;
+      profiles[cleanEmail] = {
+        uid: uid,
+        email: cleanEmail,
+        name: name.trim(),
+        role: 'Skill Explorer',
+        bio: '',
+        teachSkills: [],
+        learnSkills: [],
+        availability: [],
+        updatedAt: freshUser.createdAt
+      };
+
+      const deletedMap = getCachedDeletedUsers();
+      delete deletedMap[cleanEmail];
+      saveCachedDeletedUsers(deletedMap);
+      saveCachedUsers(users);
+      saveCachedProfiles(profiles);
+
+      localStorage.setItem(SESSION_KEY, cleanEmail);
+      try { sessionStorage.setItem(SESSION_KEY, cleanEmail); } catch (e) {}
+
+      return { success: true, requiresVerification: false, user: freshUser, hasProfile: false };
     },
 
     authenticateUser: async function(email, password) {
       const cleanEmail = email.trim().toLowerCase();
-      const users = getCachedUsers();
-
-      // Cloud Firebase Login
       const auth = getAuth();
       const db = getDb();
 
+      // 1. Authenticate with Firebase Auth
+      let authUser = null;
       if (auth) {
         try {
-          await auth.signInWithEmailAndPassword(cleanEmail, password);
+          const cred = await auth.signInWithEmailAndPassword(cleanEmail, password);
+          authUser = cred ? cred.user : auth.currentUser;
         } catch (err) {
-          // If user exists in local cache with matching password, fallback or report error
-          if (users[cleanEmail] && users[cleanEmail].password === password) {
-            // Attempt to create user in Firebase Auth
-            try {
-              await auth.createUserWithEmailAndPassword(cleanEmail, password);
-            } catch (e) {}
-          } else {
-            return { success: false, message: err.message || 'Invalid email or password.' };
-          }
+          return { success: false, message: err.message || 'Invalid email or password.' };
         }
       }
 
-      // Check account status in Firestore or cache
+      const uid = authUser ? authUser.uid : null;
+
+      // 2. Single Source of Truth: Read Cloud Firestore user document by UID or email query
       let userDoc = null;
       if (db) {
+        if (uid) {
+          try {
+            const doc = await db.collection('users').doc(uid).get();
+            if (doc.exists) userDoc = doc.data();
+          } catch (e) {}
+        }
         try {
-          const doc = await db.collection('users').doc(cleanEmail).get();
-          if (doc.exists) {
-            userDoc = doc.data();
+          const docEmail = await db.collection('users').doc(cleanEmail).get();
+          if (docEmail.exists) {
+            const emailData = docEmail.data();
+            if (emailData) {
+              if (!userDoc) {
+                userDoc = emailData;
+              } else {
+                if ((emailData.teachSkills && emailData.teachSkills.length > 0) || !userDoc.teachSkills || userDoc.teachSkills.length === 0) {
+                  userDoc.teachSkills = emailData.teachSkills || userDoc.teachSkills || [];
+                }
+                if ((emailData.learnSkills && emailData.learnSkills.length > 0) || !userDoc.learnSkills || userDoc.learnSkills.length === 0) {
+                  userDoc.learnSkills = emailData.learnSkills || userDoc.learnSkills || [];
+                }
+                if ((emailData.availability && emailData.availability.length > 0) || !userDoc.availability || userDoc.availability.length === 0) {
+                  userDoc.availability = emailData.availability || userDoc.availability || [];
+                }
+                if (emailData.name) userDoc.name = emailData.name;
+                if (emailData.role) userDoc.role = emailData.role;
+                if (emailData.bio) userDoc.bio = emailData.bio;
+              }
+            }
           }
         } catch (e) {}
+
+        if (!userDoc) {
+          try {
+            const snap = await db.collection('users').where('email', '==', cleanEmail).get();
+            snap.forEach(doc => {
+              if (doc.exists) userDoc = doc.data();
+            });
+          } catch (e) {}
+        }
       }
 
-      if (userDoc && userDoc.accountStatus === 'blocked') {
+      const cachedUsers = getCachedUsers();
+      const cachedUser = cachedUsers[cleanEmail];
+
+      if (!userDoc && !cachedUser) {
+        if (auth) auth.signOut().catch(() => {});
+        return { success: false, message: 'Account not found. Please sign up for a new account.' };
+      }
+
+      const status = (userDoc && userDoc.accountStatus) || (cachedUser && cachedUser.accountStatus) || 'approved';
+
+      if (status === 'blocked') {
+        if (auth) auth.signOut().catch(() => {});
         return { success: false, message: 'Your account has been blocked by the administrator. Please contact support.' };
       }
 
-      const user = users[cleanEmail] || {
-        name: (userDoc && userDoc.name) || cleanEmail.split('@')[0],
+      if (status === 'deleted') {
+        if (auth) auth.signOut().catch(() => {});
+        return { success: false, message: 'This account has been deleted by an administrator. Please sign up for a new account.' };
+      }
+
+      const user = {
+        uid: (userDoc && (userDoc.uid || userDoc.userId)) || uid || (cachedUser && (cachedUser.uid || cachedUser.userId)) || cleanEmail,
+        name: (userDoc && userDoc.name) || (cachedUser && cachedUser.name) || (authUser && authUser.displayName) || cleanEmail.split('@')[0],
         email: cleanEmail,
+        password: password,
         isVerified: true,
-        accountStatus: (userDoc && userDoc.accountStatus) || 'approved',
-        createdAt: (userDoc && userDoc.createdAt) || new Date().toISOString()
+        accountStatus: 'approved',
+        createdAt: (userDoc && userDoc.createdAt) || (cachedUser && cachedUser.createdAt) || new Date().toISOString()
       };
 
-      if (user.accountStatus === 'blocked') {
-        return { success: false, message: 'Your account has been blocked by the administrator. Please contact support.' };
-      }
+      const users = getCachedUsers();
+      const profiles = getCachedProfiles();
+      const existingProfile = profiles[cleanEmail] || {};
+
+      const teachSkills = (userDoc && Array.isArray(userDoc.teachSkills) && userDoc.teachSkills.length > 0)
+        ? userDoc.teachSkills
+        : (existingProfile.teachSkills || []);
+
+      const learnSkills = (userDoc && Array.isArray(userDoc.learnSkills) && userDoc.learnSkills.length > 0)
+        ? userDoc.learnSkills
+        : (existingProfile.learnSkills || []);
+
+      const availability = (userDoc && Array.isArray(userDoc.availability) && userDoc.availability.length > 0)
+        ? userDoc.availability
+        : (existingProfile.availability || []);
 
       users[cleanEmail] = user;
+      profiles[cleanEmail] = {
+        uid: user.uid,
+        email: cleanEmail,
+        name: user.name,
+        role: (userDoc && userDoc.role) || existingProfile.role || 'Skill Explorer',
+        bio: (userDoc && userDoc.bio !== undefined && userDoc.bio !== '') ? userDoc.bio : (existingProfile.bio || ''),
+        teachSkills: teachSkills,
+        learnSkills: learnSkills,
+        availability: availability,
+        updatedAt: (userDoc && userDoc.updatedAt) || existingProfile.updatedAt || new Date().toISOString()
+      };
       saveCachedUsers(users);
+      saveCachedProfiles(profiles);
+
       localStorage.setItem(SESSION_KEY, cleanEmail);
       try { sessionStorage.setItem(SESSION_KEY, cleanEmail); } catch (e) {}
 
-      const profiles = getCachedProfiles();
-      const hasProfile = !!profiles[cleanEmail] || (userDoc && userDoc.teachSkills && userDoc.teachSkills.length > 0);
+      const hasProfile = (profiles[cleanEmail].teachSkills && profiles[cleanEmail].teachSkills.length > 0);
 
       return { success: true, user, hasProfile, isVerified: true };
     },
@@ -563,6 +818,7 @@
       const learnSkills = (profileData.learnSkills || []).slice(0, 2);
 
       const updatedProfile = {
+        uid: user.uid || email,
         email: email,
         name: profileData.name.trim(),
         role: profileData.role ? profileData.role.trim() : 'Skill Explorer',
@@ -582,19 +838,26 @@
         saveCachedUsers(users);
       }
 
-      // Cloud Firestore sync
+      // Cloud Firestore sync to both doc(uid) and doc(email)
       const db = getDb();
       if (db) {
+        const payload = {
+          uid: updatedProfile.uid,
+          email: email,
+          name: updatedProfile.name,
+          role: updatedProfile.role,
+          bio: updatedProfile.bio,
+          teachSkills: updatedProfile.teachSkills,
+          learnSkills: updatedProfile.learnSkills,
+          availability: updatedProfile.availability,
+          updatedAt: updatedProfile.updatedAt
+        };
+
         try {
-          await db.collection('users').doc(email).set({
-            name: updatedProfile.name,
-            role: updatedProfile.role,
-            bio: updatedProfile.bio,
-            teachSkills: updatedProfile.teachSkills,
-            learnSkills: updatedProfile.learnSkills,
-            availability: updatedProfile.availability,
-            updatedAt: updatedProfile.updatedAt
-          }, { merge: true });
+          if (user.uid) {
+            await db.collection('users').doc(user.uid).set(payload, { merge: true });
+          }
+          await db.collection('users').doc(email).set(payload, { merge: true });
         } catch (err) {
           console.error('Firestore saveProfile Error:', err);
         }
@@ -605,21 +868,33 @@
 
     // Logout
     logout: function() {
-      localStorage.removeItem(SESSION_KEY);
+      try {
+        localStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(SESSION_KEY);
+        sessionStorage.clear();
+      } catch (e) {}
+
       const auth = getAuth();
       if (auth) auth.signOut().catch(() => {});
-      window.location.href = 'auth.html';
+      window.location.replace('auth.html');
     },
 
     // Route Guard
     requireAuth: function() {
       const user = this.getCurrentUser();
       if (!user) {
-        window.location.href = 'auth.html';
+        if (typeof window !== 'undefined' && window.location.pathname.indexOf('auth.html') === -1) {
+          window.location.replace('auth.html');
+        }
         return null;
       }
       if (user.accountStatus === 'blocked') {
         alert('Your account is currently blocked by an administrator.');
+        this.logout();
+        return null;
+      }
+      if (user.accountStatus === 'deleted' || isUserDeleted(user.email)) {
+        alert('Your account has been permanently deleted by an administrator.');
         this.logout();
         return null;
       }
@@ -877,22 +1152,22 @@
     },
 
     // Session Lifecycle (Rules 5-10)
-    getActiveSession: function(peerEmail) {
-      const currentUser = this.getCurrentUser();
-      if (!currentUser || !peerEmail) return null;
+    getActiveSession: function(peerEmail, callerEmail) {
+      const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
+      if (!email || !peerEmail) return null;
 
-      const pairKey = getPairKey(currentUser.email, peerEmail);
+      const pairKey = getPairKey(email, peerEmail);
       const sessions = getCachedSessions();
-      return sessions.find(s => s.pairKey === pairKey && s.status === 'active') || null;
+      return sessions.find(s => s.pairKey === pairKey && (s.status || '').toLowerCase() === 'active') || null;
     },
 
-    getPendingSessionRequest: function(peerEmail) {
-      const currentUser = this.getCurrentUser();
-      if (!currentUser || !peerEmail) return null;
+    getPendingSessionRequest: function(peerEmail, callerEmail) {
+      const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
+      if (!email || !peerEmail) return null;
 
-      const pairKey = getPairKey(currentUser.email, peerEmail);
+      const pairKey = getPairKey(email, peerEmail);
       const requests = getCachedSessionRequests();
-      return requests.find(r => r.pairKey === pairKey && r.status === 'pending') || null;
+      return requests.find(r => r.pairKey === pairKey && (r.status || '').toLowerCase() === 'pending') || null;
     },
 
     isMeetingLink: function(text) {
@@ -1010,6 +1285,8 @@
           meetingUrl: req.meetingUrl,
           status: 'active',
           completedBy: [],
+          user1Completed: false,
+          user2Completed: false,
           createdAt: new Date().toISOString(),
           completedAt: null
         };
@@ -1071,67 +1348,135 @@
       }
     },
 
-    getPeerSessionNumber: function(sessionId, peerEmail) {
-      const email = this.getCurrentSession();
-      if (!email || !sessionId || !peerEmail) return 1;
+    getCompletedSessionsForPair: function(peerEmail, callerEmail) {
+      const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
+      if (!email || !peerEmail) return [];
+
       const pairKey = getPairKey(email, peerEmail);
       const sessions = getCachedSessions();
-      
-      const pairSessions = sessions.filter(s => s.pairKey === pairKey);
-      pairSessions.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      
-      const idx = pairSessions.findIndex(s => s.id === sessionId);
-      return idx !== -1 ? (idx + 1) : 1;
+
+      const completed = sessions.filter(s => {
+        if (s.pairKey !== pairKey) return false;
+        const statusUpper = (s.status || '').toUpperCase();
+        const completedBy = (s.completedBy || []).map(e => (e || '').toLowerCase());
+        const isBothCompleted = completedBy.length >= 2 && completedBy.includes(email.toLowerCase()) && completedBy.includes(peerEmail.trim().toLowerCase());
+        return statusUpper === 'COMPLETED' || isBothCompleted;
+      });
+
+      // Sort strictly by completedAt or createdAt timestamp ascending
+      completed.sort((a, b) => {
+        const t1 = new Date(a.completedAt || a.createdAt || 0).getTime();
+        const t2 = new Date(b.completedAt || b.createdAt || 0).getTime();
+        return t1 - t2;
+      });
+
+      return completed;
     },
 
-    markSessionCompleted: function(peerEmail) {
-      const currentUser = this.getCurrentUser();
+    getPeerSessionNumber: function(sessionId, peerEmail, callerEmail) {
+      const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
+      if (!email || !peerEmail) return 1;
+
+      const completedSessions = this.getCompletedSessionsForPair(peerEmail, email);
+
+      if (sessionId) {
+        const idx = completedSessions.findIndex(s => s.id === sessionId);
+        if (idx !== -1) {
+          return idx + 1;
+        }
+      }
+
+      // Active or new session serial number equals (completed sessions count + 1)
+      return completedSessions.length + 1;
+    },
+
+    markSessionCompleted: async function(peerEmail, callerEmail) {
+      const email = (callerEmail || this.getCurrentSession() || '').toLowerCase();
+      const currentUser = this.getCurrentUser(email);
       if (!currentUser) return { success: false, message: 'Not logged in.' };
 
       const myEmail = currentUser.email.toLowerCase();
-      const activeSess = this.getActiveSession(peerEmail);
-      if (!activeSess) return { success: false, message: 'No active session found.' };
-
-      if (!activeSess.completedBy) activeSess.completedBy = [];
-
-      if (!activeSess.completedBy.includes(myEmail)) {
-        activeSess.completedBy.push(myEmail);
-      }
-
-      const sessNum = this.getPeerSessionNumber(activeSess.id, peerEmail);
-      let isFullyCompleted = false;
+      const targetEmail = peerEmail.trim().toLowerCase();
+      let activeSess = this.getActiveSession(targetEmail, myEmail);
 
       const db = getDb();
 
-      if (activeSess.completedBy.length >= 2) {
+      // If activeSess is missing in local cache, query Cloud Firestore by pairKey
+      if (!activeSess && db) {
+        try {
+          const pairKey = getPairKey(myEmail, targetEmail);
+          const snap = await db.collection('sessions').where('pairKey', '==', pairKey).get();
+          snap.forEach(doc => {
+            const data = doc.data();
+            if (data && (data.status || '').toLowerCase() === 'active') {
+              activeSess = data;
+            }
+          });
+        } catch (e) {}
+      }
+
+      if (!activeSess) {
+        return { success: false, message: 'No active session found. Send a meeting link to start a session.' };
+      }
+
+      if (!activeSess.completedBy) activeSess.completedBy = [];
+      const completedLower = activeSess.completedBy.map(e => (e || '').toLowerCase());
+      if (!completedLower.includes(myEmail)) {
+        activeSess.completedBy.push(myEmail);
+      }
+
+      const u1 = (activeSess.user1 || '').toLowerCase();
+      const u2 = (activeSess.user2 || '').toLowerCase();
+
+      if (myEmail === u1) activeSess.user1Completed = true;
+      if (myEmail === u2) activeSess.user2Completed = true;
+      activeSess[myEmail + '_completed'] = true;
+
+      const completedSet = new Set((activeSess.completedBy || []).map(e => (e || '').toLowerCase()));
+      if (activeSess.user1Completed || activeSess[u1 + '_completed']) completedSet.add(u1);
+      if (activeSess.user2Completed || activeSess[u2 + '_completed']) completedSet.add(u2);
+
+      const hasBothCompleted = completedSet.size >= 2 || (u1 && u2 && completedSet.has(u1) && completedSet.has(u2));
+
+      let isFullyCompleted = false;
+
+      if (hasBothCompleted) {
         activeSess.status = 'COMPLETED';
         activeSess.completedAt = new Date().toISOString();
         isFullyCompleted = true;
 
-        const myProf = this.getCurrentProfile();
+        const sessNum = this.getPeerSessionNumber(activeSess.id, targetEmail, myEmail);
+        const myProf = this.getCurrentProfile(myEmail);
         this.addNotification(
-          peerEmail,
+          targetEmail,
           'Exchange Completed Successfully!',
-          `Both you and ${myProf ? myProf.name : 'your peer'} marked session #${sessNum} as completed!`,
+          `Both you and ${myProf ? myProf.name : 'your peer'} marked Session #${sessNum} as completed!`,
           'success',
           { peerEmail: myEmail }
         );
 
-        // Increment total completed count in Firestore
-        if (db && firebase.firestore && firebase.firestore.FieldValue) {
-          db.collection('users').doc(myEmail).update({
-            totalSessionsCompleted: firebase.firestore.FieldValue.increment(1)
-          }).catch(() => {});
-          db.collection('users').doc(peerEmail.toLowerCase()).update({
-            totalSessionsCompleted: firebase.firestore.FieldValue.increment(1)
-          }).catch(() => {});
+        // Increment total completed count in cache & Firestore
+        const users = getCachedUsers();
+        if (users[myEmail]) users[myEmail].totalSessionsCompleted = (users[myEmail].totalSessionsCompleted || 0) + 1;
+        if (users[targetEmail]) users[targetEmail].totalSessionsCompleted = (users[targetEmail].totalSessionsCompleted || 0) + 1;
+        saveCachedUsers(users);
+
+        if (db) {
+          try {
+            await db.collection('users').doc(myEmail).set({ totalSessionsCompleted: (users[myEmail] ? users[myEmail].totalSessionsCompleted : 1) }, { merge: true });
+            await db.collection('users').doc(targetEmail).set({ totalSessionsCompleted: (users[targetEmail] ? users[targetEmail].totalSessionsCompleted : 1) }, { merge: true });
+            if (currentUser.uid) {
+              await db.collection('users').doc(currentUser.uid).set({ totalSessionsCompleted: (users[myEmail] ? users[myEmail].totalSessionsCompleted : 1) }, { merge: true });
+            }
+          } catch (e) {}
         }
       } else {
-        const myProf = this.getCurrentProfile();
+        const sessNum = this.getPeerSessionNumber(activeSess.id, targetEmail, myEmail);
+        const myProf = this.getCurrentProfile(myEmail);
         this.addNotification(
-          peerEmail,
+          targetEmail,
           'Session Marked Completed',
-          `${myProf ? myProf.name : 'Your peer'} marked session #${sessNum} as completed! Click complete to finalize.`,
+          `${myProf ? myProf.name : 'Your peer'} marked Session #${sessNum} as completed! Click complete to finalize.`,
           'info',
           { peerEmail: myEmail }
         );
@@ -1141,14 +1486,20 @@
       const idx = sessions.findIndex(s => s.id === activeSess.id);
       if (idx !== -1) {
         sessions[idx] = activeSess;
-        saveCachedSessions(sessions);
+      } else {
+        sessions.push(activeSess);
       }
+      saveCachedSessions(sessions);
 
       if (db) {
-        db.collection('sessions').doc(activeSess.id).set(activeSess, { merge: true }).catch(console.error);
+        try {
+          await db.collection('sessions').doc(activeSess.id).set(activeSess, { merge: true });
+        } catch (err) {
+          console.error('Firestore markSessionCompleted error:', err);
+        }
       }
 
-      window.dispatchEvent(new CustomEvent('skillshare_session_updated', { detail: { peerEmail, session: activeSess } }));
+      window.dispatchEvent(new CustomEvent('skillshare_session_updated', { detail: { peerEmail: targetEmail, session: activeSess } }));
       return { success: true, session: activeSess, isFullyCompleted };
     },
 
@@ -1492,10 +1843,14 @@
         const isUserInSession = (u1 === email || u2 === email);
         const statusUpper = (s.status || '').trim().toUpperCase();
         const isCompletedStatus = (statusUpper === 'COMPLETED' || statusUpper === 'SUCCESSFUL');
-        const completedBy = (s.completedBy || []).map(e => e.trim().toLowerCase());
-        const bothClickedComplete = completedBy.length >= 2 && completedBy.includes(u1) && completedBy.includes(u2);
-        
-        return isUserInSession && isCompletedStatus && bothClickedComplete;
+
+        const completedSet = new Set((s.completedBy || []).map(e => (e || '').trim().toLowerCase()));
+        if (s.user1Completed || s[u1 + '_completed']) completedSet.add(u1);
+        if (s.user2Completed || s[u2 + '_completed']) completedSet.add(u2);
+
+        const bothCompleted = completedSet.size >= 2 || (u1 && u2 && completedSet.has(u1) && completedSet.has(u2));
+
+        return isUserInSession && (isCompletedStatus || bothCompleted);
       }).length;
     },
 
@@ -1505,32 +1860,36 @@
       const users = getCachedUsers();
       const profiles = getCachedProfiles();
 
-      const list = Object.values(users).map(u => {
-        const email = u.email.toLowerCase();
-        const prof = profiles[email] || {};
-        return {
-          name: u.name,
-          email: email,
-          userId: email,
-          isVerified: !!u.isVerified,
-          accountStatus: u.accountStatus || 'approved',
-          createdAt: u.createdAt || new Date().toISOString(),
-          teachSkills: prof.teachSkills || [],
-          learnSkills: prof.learnSkills || [],
-          role: prof.role || 'Skill Share Member',
-          hasProfile: !!profiles[email],
-          totalSessionsCompleted: this.getCompletedSessionsCount(email)
-        };
-      });
+      const list = Object.values(users)
+        .filter(u => u && u.email && u.accountStatus !== 'deleted')
+        .map(u => {
+          const email = u.email.toLowerCase();
+          const prof = profiles[email] || {};
+          return {
+            name: u.name || email.split('@')[0],
+            email: email,
+            userId: u.userId || u.uid || email,
+            isVerified: !!u.isVerified,
+            accountStatus: u.accountStatus || 'approved',
+            createdAt: u.createdAt || new Date().toISOString(),
+            teachSkills: prof.teachSkills || [],
+            learnSkills: prof.learnSkills || [],
+            role: prof.role || 'Skill Share Member',
+            hasProfile: !!profiles[email],
+            totalSessionsCompleted: this.getCompletedSessionsCount(email)
+          };
+        });
 
       list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       return list;
     },
 
-    updateUserAccountStatus: function(email, newStatus) {
+    updateUserAccountStatus: async function(email, newStatus) {
       this.requireAdminAuth();
       const cleanEmail = email.trim().toLowerCase();
       const users = getCachedUsers();
+      const userObj = users[cleanEmail] || {};
+      const uid = userObj.uid || userObj.userId;
 
       if (users[cleanEmail]) {
         users[cleanEmail].accountStatus = newStatus;
@@ -1539,62 +1898,202 @@
 
       const db = getDb();
       if (db) {
-        db.collection('users').doc(cleanEmail).update({ accountStatus: newStatus }).catch(console.error);
+        try {
+          // 1. Update doc by cleanEmail
+          await db.collection('users').doc(cleanEmail).set({ accountStatus: newStatus }, { merge: true }).catch(() => {});
+
+          // 2. Update doc by UID if different
+          if (uid && uid !== cleanEmail) {
+            await db.collection('users').doc(uid).set({ accountStatus: newStatus }, { merge: true }).catch(() => {});
+          }
+
+          // 3. Query all docs matching email field to ensure complete sync
+          const snap = await db.collection('users').where('email', '==', cleanEmail).get().catch(() => null);
+          if (snap && !snap.empty) {
+            snap.forEach(doc => {
+              doc.ref.set({ accountStatus: newStatus }, { merge: true }).catch(() => {});
+            });
+          }
+        } catch (err) {
+          console.warn('updateUserAccountStatus Firestore error:', err);
+        }
       }
 
       window.dispatchEvent(new CustomEvent('skillshare_user_status_changed', { detail: { email: cleanEmail, status: newStatus } }));
       return { success: true };
     },
 
-    deleteUserAccount: function(email) {
+    deleteUserAccount: async function(email, targetUid) {
       this.requireAdminAuth();
       const cleanEmail = email.trim().toLowerCase();
-      const users = getCachedUsers();
-      const profiles = getCachedProfiles();
+      const uid = targetUid || null;
 
-      delete users[cleanEmail];
-      saveCachedUsers(users);
+      // 1. Invoke Server-side Backend API to permanently delete user from Firebase Auth & Firestore
+      try {
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, uid: uid })
+        });
+      } catch (err) {
+        console.warn('Backend delete-user call notice:', err);
+      }
 
-      delete profiles[cleanEmail];
-      saveCachedProfiles(profiles);
-
+      // 2. Client-side Cloud Firestore cleanup fallback
       const db = getDb();
       if (db) {
-        db.collection('users').doc(cleanEmail).delete().catch(console.error);
+        try {
+          // Record tombstone doc in deleted_users collection for real-time sync across all browsers
+          await db.collection('deleted_users').doc(cleanEmail).set({
+            email: cleanEmail,
+            uid: uid || '',
+            deletedAt: new Date().toISOString()
+          }).catch(() => {});
+
+          if (uid) {
+            await db.collection('users').doc(uid).delete().catch(() => {});
+          }
+          await db.collection('users').doc(cleanEmail).delete().catch(() => {});
+
+          const emailSnap = await db.collection('users').where('email', '==', cleanEmail).get();
+          emailSnap.forEach(doc => doc.ref.delete().catch(() => {}));
+
+          const connsSnap = await db.collection('connections').get();
+          connsSnap.forEach(doc => {
+            if (doc.id.includes(cleanEmail)) {
+              doc.ref.delete().catch(() => {});
+            }
+          });
+
+          const sessSnap = await db.collection('sessions').get();
+          sessSnap.forEach(doc => {
+            const data = doc.data();
+            const u1 = (data.user1 || data.user1Email || data.from || '').toLowerCase();
+            const u2 = (data.user2 || data.user2Email || data.to || '').toLowerCase();
+            if (u1 === cleanEmail || u2 === cleanEmail) {
+              doc.ref.delete().catch(() => {});
+            }
+          });
+
+          const notifSnap = await db.collection('notifications').get();
+          notifSnap.forEach(doc => {
+            if (doc.id.includes(cleanEmail)) {
+              doc.ref.delete().catch(() => {});
+            }
+          });
+
+          const chatsSnap = await db.collection('chats').get();
+          chatsSnap.forEach(doc => {
+            if (doc.id.includes(cleanEmail)) {
+              doc.ref.delete().catch(() => {});
+            }
+          });
+        } catch (err) {
+          console.warn('Firestore user deletion notice:', err);
+        }
+      }
+
+      // 3. Purge local cache
+      const users = getCachedUsers();
+      const profiles = getCachedProfiles();
+      delete users[cleanEmail];
+      delete profiles[cleanEmail];
+      saveCachedUsers(users);
+      saveCachedProfiles(profiles);
+
+      const deleted = getCachedDeletedUsers();
+      delete deleted[cleanEmail];
+      saveCachedDeletedUsers(deleted);
+
+      const activeSess = this.getCurrentSession();
+      if (activeSess === cleanEmail) {
+        localStorage.removeItem(SESSION_KEY);
+        try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
       }
 
       window.dispatchEvent(new CustomEvent('skillshare_user_deleted', { detail: { email: cleanEmail } }));
+      window.dispatchEvent(new CustomEvent('skillshare_user_status_changed', { detail: {} }));
+      window.dispatchEvent(new CustomEvent('skillshare_session_updated', { detail: {} }));
+
+      return { success: true };
+    },
+
+    isDefinedSession: function(s) {
+      if (!s || typeof s !== 'object') return false;
+      const u1 = (s.user1 || s.user1Email || '').toString().trim().toLowerCase();
+      const u2 = (s.user2 || s.user2Email || '').toString().trim().toLowerCase();
+
+      if (!u1 || u1 === 'undefined' || u1 === 'null') return false;
+      if (!u2 || u2 === 'undefined' || u2 === 'null') return false;
+
+      return true;
+    },
+
+    purgeUndefinedSessions: function() {
+      const sessions = getCachedSessions();
+      const cleanSessions = sessions.filter(s => this.isDefinedSession(s));
+      if (cleanSessions.length !== sessions.length) {
+        saveCachedSessions(cleanSessions);
+      }
+      return cleanSessions;
+    },
+
+    deleteSession: function(sessionId) {
+      this.requireAdminAuth();
+      if (!sessionId) return { success: false };
+      const sessions = getCachedSessions().filter(s => s.id !== sessionId);
+      saveCachedSessions(sessions);
+      const db = getDb();
+      if (db) {
+        db.collection('sessions').doc(sessionId).delete().catch(console.error);
+      }
+      window.dispatchEvent(new CustomEvent('skillshare_session_updated', { detail: { sessionId } }));
       return { success: true };
     },
 
     getAllSessionsForAdmin: function() {
       this.requireAdminAuth();
-      const sessions = getCachedSessions();
+      const sessions = this.purgeUndefinedSessions();
       const profiles = getCachedProfiles();
       const users = getCachedUsers();
 
-      const list = sessions.map(s => {
-        const u1Prof = profiles[s.user1] || { name: users[s.user1] ? users[s.user1].name : s.user1 };
-        const u2Prof = profiles[s.user2] || { name: users[s.user2] ? users[s.user2].name : s.user2 };
-        
-        const completedBy = s.completedBy || [];
-        const completedCount = completedBy.length;
-        const isCompleted = completedCount >= 2 || (s.status || '').toUpperCase() === 'COMPLETED';
+      const list = [];
+      for (const s of sessions) {
+        if (!this.isDefinedSession(s)) continue;
 
-        return {
+        const u1Email = (s.user1 || s.user1Email || '').toLowerCase();
+        const u2Email = (s.user2 || s.user2Email || '').toLowerCase();
+
+        const u1Prof = profiles[u1Email] || (users[u1Email] ? { name: users[u1Email].name } : null);
+        const u2Prof = profiles[u2Email] || (users[u2Email] ? { name: users[u2Email].name } : null);
+        
+        const u1Name = (u1Prof && u1Prof.name && u1Prof.name !== 'undefined') ? u1Prof.name : (u1Email && u1Email !== 'undefined' ? u1Email.split('@')[0] : '');
+        const u2Name = (u2Prof && u2Prof.name && u2Prof.name !== 'undefined') ? u2Prof.name : (u2Email && u2Email !== 'undefined' ? u2Email.split('@')[0] : '');
+
+        if (!u1Email || u1Email === 'undefined' || !u2Email || u2Email === 'undefined') continue;
+
+        const completedSet = new Set((s.completedBy || []).map(e => (e || '').toLowerCase()));
+        if (s.user1Completed || s[u1Email + '_completed']) completedSet.add(u1Email);
+        if (s.user2Completed || s[u2Email + '_completed']) completedSet.add(u2Email);
+
+        const statusUpper = (s.status || '').toUpperCase();
+        const isCompleted = statusUpper === 'COMPLETED' || completedSet.size >= 2;
+        const completedCount = isCompleted ? 2 : completedSet.size;
+
+        list.push({
           id: s.id,
-          user1Email: s.user1,
-          user1Name: u1Prof.name,
-          user2Email: s.user2,
-          user2Name: u2Prof.name,
+          user1Email: u1Email,
+          user1Name: u1Name || u1Email.split('@')[0],
+          user2Email: u2Email,
+          user2Name: u2Name || u2Email.split('@')[0],
           proposedSlot: s.proposedSlot || 'Flexible',
           status: isCompleted ? 'COMPLETED' : 'active',
           completedCount: completedCount,
-          completedBy: completedBy,
-          createdAt: s.createdAt,
+          completedBy: Array.from(completedSet),
+          createdAt: s.createdAt || new Date().toISOString(),
           completedAt: isCompleted ? (s.completedAt || new Date().toISOString()) : null
-        };
-      });
+        });
+      }
 
       list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       return list;
@@ -1610,7 +2109,7 @@
       const pendingUsers = userList.filter(u => !u.isVerified).length;
       const blockedUsers = userList.filter(u => u.accountStatus === 'blocked').length;
 
-      const sessions = getCachedSessions();
+      const sessions = this.purgeUndefinedSessions();
       const totalSessions = sessions.length;
       const successfulSessions = sessions.filter(s => {
         const statusUpper = (s.status || '').toUpperCase();
@@ -1639,7 +2138,7 @@
     getCachedSessions: getCachedSessions,
     saveCachedSessions: saveCachedSessions,
 
-    // Cloud Firestore Force Sync
+    // Cloud Firestore Force Sync (Reconciles Local Storage Cache with Firestore)
     syncWithFirestore: async function() {
       const db = getDb();
       if (!db) return;
@@ -1650,25 +2149,39 @@
 
         usersSnap.forEach(doc => {
           const data = doc.data();
-          const email = (data.email || doc.id).toLowerCase();
+          const email = (data.email || (doc.id.includes('@') ? doc.id : '')).toLowerCase();
+          const uid = data.uid || doc.id;
+          if (!email || data.accountStatus === 'deleted') return;
+
+          const existingProf = profiles[email] || {};
+          const hasDataSkills = (data.teachSkills && data.teachSkills.length > 0) || (data.learnSkills && data.learnSkills.length > 0) || (data.availability && data.availability.length > 0);
+          const hasExistingSkills = (existingProf.teachSkills && existingProf.teachSkills.length > 0) || (existingProf.learnSkills && existingProf.learnSkills.length > 0) || (existingProf.availability && existingProf.availability.length > 0);
+
           users[email] = {
-            name: data.name || email.split('@')[0],
+            uid: uid || existingProf.uid || email,
+            userId: uid || existingProf.uid || email,
+            name: data.name || (users[email] && users[email].name) || email.split('@')[0],
             email: email,
-            password: data.password || '',
+            password: data.password || (users[email] && users[email].password) || '',
             isVerified: data.isVerified !== false,
-            accountStatus: data.accountStatus || 'approved',
-            createdAt: data.createdAt || new Date().toISOString()
+            accountStatus: data.accountStatus || (users[email] && users[email].accountStatus) || 'approved',
+            createdAt: data.createdAt || (users[email] && users[email].createdAt) || new Date().toISOString()
           };
 
+          const teachSkills = hasDataSkills ? (data.teachSkills || []) : (hasExistingSkills ? existingProf.teachSkills : (data.teachSkills || []));
+          const learnSkills = hasDataSkills ? (data.learnSkills || []) : (hasExistingSkills ? existingProf.learnSkills : (data.learnSkills || []));
+          const availability = hasDataSkills ? (data.availability || []) : (hasExistingSkills ? existingProf.availability : (data.availability || []));
+
           profiles[email] = {
+            uid: uid || existingProf.uid || email,
             email: email,
-            name: data.name || email.split('@')[0],
-            role: data.role || 'Skill Explorer',
-            bio: data.bio || '',
-            teachSkills: data.teachSkills || [],
-            learnSkills: data.learnSkills || [],
-            availability: data.availability || [],
-            updatedAt: data.updatedAt || new Date().toISOString()
+            name: data.name || existingProf.name || email.split('@')[0],
+            role: data.role || existingProf.role || 'Skill Explorer',
+            bio: (data.bio !== undefined && data.bio !== '') ? data.bio : (existingProf.bio || ''),
+            teachSkills: teachSkills,
+            learnSkills: learnSkills,
+            availability: availability,
+            updatedAt: data.updatedAt || existingProf.updatedAt || new Date().toISOString()
           };
         });
 
@@ -1681,7 +2194,8 @@
         const currentRequests = [];
         sessSnap.forEach(doc => {
           const data = doc.data();
-          if (data.status === 'pending') {
+          if (!this.isDefinedSession(data)) return;
+          if ((data.status || '').toLowerCase() === 'pending') {
             currentRequests.push(data);
           } else {
             currentSessions.push(data);
@@ -1695,7 +2209,9 @@
       } catch (err) {
         console.warn('syncWithFirestore notice:', err);
       }
-    }
+    },
+
+    isUserDeleted: isUserDeleted
   };
 
   window.SkillSwapStore = SkillSwapStore;

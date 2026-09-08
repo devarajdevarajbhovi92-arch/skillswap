@@ -6,6 +6,18 @@
 document.addEventListener('DOMContentLoaded', () => {
   const store = window.SkillSwapStore || window.SkillShareStore;
 
+  // If user is already logged in, redirect straight to dashboard
+  if (store) {
+    const activeUser = store.getCurrentUser();
+    if (activeUser && activeUser.accountStatus === 'approved') {
+      const activeProfile = store.getCurrentProfile();
+      if (activeProfile && activeProfile.teachSkills && activeProfile.teachSkills.length > 0) {
+        window.location.replace('dashboard.html');
+        return;
+      }
+    }
+  }
+
   const loginTab = document.getElementById('loginTab');
   const signupTab = document.getElementById('signupTab');
   const authTitle = document.getElementById('authTitle');
