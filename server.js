@@ -156,6 +156,6 @@ app.get('*', (req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[SkillSwap Server] Running on http://127.0.0.1:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[SkillSwap Server] Running on port ${PORT}`);
 });
