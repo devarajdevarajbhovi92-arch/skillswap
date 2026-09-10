@@ -258,12 +258,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  let matchAnalyticsTracked = false;
   // Render Matches Grid
   function renderMatches() {
     if (!matchesList) return;
     matchesList.innerHTML = '';
 
     const matches = store.findMatches(currentFilter, searchQuery);
+
+// Track overall matching result once per dashboard load
+if (!matchAnalyticsTracked) {
+  const allMatches = store.findMatches('all', '');
+  const totalMatches = allMatches.length;
+  const twoWayMatches = allMatches.filter(m => m.isTwoWay).length;
+  const oneWayMatches = allMatches.filter(m => !m.isTwoWay).length;
+
+  if (totalMatches > 0) {
+    trackEvent("match_found", {
+      total_matches: totalMatches,
+      two_way_matches: twoWayMatches,
+      one_way_matches: oneWayMatches
+    });
+  } else {
+    trackEvent("match_not_found");
+  }
+
+  matchAnalyticsTracked = true;
+}
 
     if (matchCountHint) {
       matchCountHint.textContent = `${matches.length} verified peer ${matches.length === 1 ? 'match' : 'matches'} found`;
