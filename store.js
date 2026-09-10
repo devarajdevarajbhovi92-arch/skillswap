@@ -1,3 +1,8 @@
+function trackEvent(eventName, parameters = {}) {
+  if (typeof gtag === "function") {
+    gtag("event", eventName, parameters);
+  }
+}
 /**
  * SkillSwap Data Store & Realtime Cloud Engine (Firebase + Local Cache)
  * Connects directly to Cloud Firestore, Firebase Authentication, and Firebase Storage
