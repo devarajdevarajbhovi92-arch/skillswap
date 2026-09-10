@@ -239,6 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const res = await store.saveProfile(profileData);
         if (res.success) {
+          trackEvent("profile_created");
           showToast('Profile saved successfully!');
           setTimeout(() => {
             window.location.href = 'dashboard.html';
