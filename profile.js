@@ -1,6 +1,6 @@
 /**
  * SkillSwap Profile Form Controller
- * Handles profile creation and editing, tag management (max 2 skills each), and availability selection.
+ * Handles profile creation and editing, tag management (max 1 skills each), and availability selection.
  */
 
 // Handle Back-Forward Cache (bfcache) navigation
@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const toastNotification = document.getElementById('toastNotification');
   const toastMessage = document.getElementById('toastMessage');
 
-  // State Management (Enforcing Max 2 skills each)
+  // State Management (Enforcing Max 1 skills each)
   let teachSkills = new Set();
   let learnSkills = new Set();
   let availability = new Set();
@@ -81,8 +81,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (profileNameInput) profileNameInput.value = existingProfile.name || currentUser.name;
     if (profileRoleInput) profileRoleInput.value = existingProfile.role || '';
     if (profileBioInput) profileBioInput.value = existingProfile.bio || '';
-    (existingProfile.teachSkills || []).slice(0, 2).forEach(s => teachSkills.add(s));
-    (existingProfile.learnSkills || []).slice(0, 2).forEach(s => learnSkills.add(s));
+    (existingProfile.teachSkills || []).slice(0, 1).forEach(s => teachSkills.add(s));
+    (existingProfile.learnSkills || []).slice(0, 1).forEach(s => learnSkills.add(s));
     (existingProfile.availability || []).forEach(a => availability.add(a));
   } else {
     if (profileNameInput) profileNameInput.value = currentUser.name;
@@ -131,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = customTeachInput.value.trim();
     if (!val) return;
 
-    if (teachSkills.size >= 2) {
-      showToast('You can select a maximum of 2 skills to teach at once.', true);
+    if (teachSkills.size >= 1) {
+      showToast('You can select a maximum of 1 skill to teach at once.', true);
       return;
     }
 
@@ -146,8 +146,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const val = customLearnInput.value.trim();
     if (!val) return;
 
-    if (learnSkills.size >= 2) {
-      showToast('You can select a maximum of 2 skills to learn at once.', true);
+    if (learnSkills.size >= 1) {
+      showToast('You can select a maximum of 1 skill to learn at once.', true);
       return;
     }
 
@@ -200,24 +200,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (teachSkills.size === 0) {
-        showToast('Please add 1 skill you can teach.', true);
-        return;
-      }
+  showToast('Please select 1 skill you can teach.', true);
+  return;
+}
 
-      if (teachSkills.size > 2) {
-        showToast('Please select a maximum of 2 skills to teach.', true);
-        return;
-      }
+if (teachSkills.size > 1) {
+  showToast('You can select a maximum of 1 skill to teach at once.', true);
+  return;
+}
 
-      if (learnSkills.size === 0) {
-        showToast('Please add 1 skill you want to learn.', true);
-        return;
-      }
+if (learnSkills.size === 0) {
+  showToast('Please select 1 skill you want to learn.', true);
+  return;
+}
 
-      if (learnSkills.size > 2) {
-        showToast('Please select a maximum of 2 skills to learn.', true);
-        return;
-      }
+if (learnSkills.size > 1) {
+  showToast('You can select a maximum of 1 skill to learn at once.', true);
+  return;
+}
 
       if (availability.size === 0) {
         showToast('Please select at least one available time slot.', true);
