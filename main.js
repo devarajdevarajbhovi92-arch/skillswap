@@ -1,3 +1,8 @@
+function trackEvent(eventName, parameters = {}) {
+    if (typeof gtag === "function") {
+        gtag("event", eventName, parameters);
+    }
+}
 /**
  * SkillSwap Landing Page Controller
  * Handles session auto-redirect if user is logged in.
