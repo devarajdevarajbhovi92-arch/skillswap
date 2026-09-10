@@ -685,6 +685,7 @@
         try {
           const cred = await auth.signInWithEmailAndPassword(cleanEmail, password);
           authUser = cred ? cred.user : auth.currentUser;
+          trackEvent("login");
         } catch (err) {
           return { success: false, message: err.message || 'Invalid email or password.' };
         }
