@@ -567,6 +567,7 @@
           authUser = cred ? cred.user : null;
           if (authUser) {
             await authUser.updateProfile({ displayName: name.trim() }).catch(() => {});
+            trackEvent("account_created");
           }
         } catch (err) {
           if (err.code === 'auth/email-already-in-use') {
