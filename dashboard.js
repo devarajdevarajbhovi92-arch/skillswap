@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.replace('profile.html');
     return;
   }
-
+  trackEvent("dashboard_viewed");
   // 2. Header & Profile Elements
   const dashUserGreeting = document.getElementById('dashUserGreeting');
   const dashLogoutBtn = document.getElementById('dashLogoutBtn');
