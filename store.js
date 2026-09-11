@@ -1,6 +1,9 @@
 function trackEvent(eventName, parameters = {}) {
   if (typeof gtag === "function") {
-    gtag("event", eventName, parameters);
+    gtag("event", eventName, {
+      ...parameters,
+      debug_mode: true
+    });
   }
 }
 /**
