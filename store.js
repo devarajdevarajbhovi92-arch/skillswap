@@ -875,6 +875,7 @@ function trackEvent(eventName, parameters = {}) {
 
     // Logout
     logout: function() {
+      trackEvent("logout");
       try {
         localStorage.removeItem(SESSION_KEY);
         sessionStorage.removeItem(SESSION_KEY);
@@ -1044,7 +1045,9 @@ function trackEvent(eventName, parameters = {}) {
       const connections = getCachedConnections();
 
       let conn = connections[pairKey];
-      if (!conn) {
+let requestCreated = false;
+
+if (!conn) {
         conn = {
           pairKey: pairKey,
           user1: myEmail,
@@ -1057,6 +1060,7 @@ function trackEvent(eventName, parameters = {}) {
         };
         connections[pairKey] = conn;
         saveCachedConnections(connections);
+        requestCreated = true;
 
         const myProf = this.getCurrentProfile(myEmail);
         this.addNotification(
@@ -1073,7 +1077,12 @@ function trackEvent(eventName, parameters = {}) {
         conn.createdAt = new Date().toISOString();
         connections[pairKey] = conn;
         saveCachedConnections(connections);
+        requestCreated = true;
       }
+      // GA4: Track successful connection request
+      if (requestCreated && typeof gtag === 'function') {
+  gtag('event', 'connection_request_sent');
+}
 
       // Firestore sync
       const db = getDb();
@@ -1115,6 +1124,7 @@ function trackEvent(eventName, parameters = {}) {
         if (conn.agreedBy.length >= 2) {
           conn.status = 'connected';
           conn.connectedAt = new Date().toISOString();
+          trackEvent('connection_accepted');
 
           this.addNotification(
             targetEmail,
@@ -1136,6 +1146,10 @@ function trackEvent(eventName, parameters = {}) {
       } else if (response === 'NO') {
         conn.status = 'rejected';
         conn.rejectedBy = myEmail;
+
+        trackEvent("connection_declined", {
+    peer_email: peerEmail
+  });
 
         this.addNotification(
           targetEmail,
@@ -1245,6 +1259,9 @@ function trackEvent(eventName, parameters = {}) {
 
       reqs.push(newReq);
       saveCachedSessionRequests(reqs);
+      trackEvent("session_link_shared", {
+  peer_email: targetEmail
+});
 
       const db = getDb();
       if (db) {
@@ -1281,6 +1298,9 @@ function trackEvent(eventName, parameters = {}) {
 
       if (response === 'accepted' || response === 'ACCEPT') {
         req.status = 'accepted';
+        trackEvent("session_accepted", {
+    peer_email: peerEmail
+  });
         saveCachedSessionRequests(reqs);
 
         const sessions = getCachedSessions();
@@ -1328,6 +1348,9 @@ function trackEvent(eventName, parameters = {}) {
 
       } else {
         req.status = 'declined';
+          trackEvent("session_declined", {
+    peer_email: peerEmail
+  });
         saveCachedSessionRequests(reqs);
 
         if (db) {
@@ -1430,6 +1453,9 @@ function trackEvent(eventName, parameters = {}) {
       const completedLower = activeSess.completedBy.map(e => (e || '').toLowerCase());
       if (!completedLower.includes(myEmail)) {
         activeSess.completedBy.push(myEmail);
+        trackEvent("session_completion_clicked", {
+    peer_email: targetEmail
+  });
       }
 
       const u1 = (activeSess.user1 || '').toLowerCase();
@@ -1449,6 +1475,9 @@ function trackEvent(eventName, parameters = {}) {
 
       if (hasBothCompleted) {
         activeSess.status = 'COMPLETED';
+        trackEvent("session_completed", {
+    peer_email: targetEmail
+  });
         activeSess.completedAt = new Date().toISOString();
         isFullyCompleted = true;
 
@@ -1662,6 +1691,9 @@ function trackEvent(eventName, parameters = {}) {
 
       // Optimistic save
       messages[chatKey].push(newMsg);
+      trackEvent("message_sent", {
+  peer_email: peerEmail
+});
       saveCachedMessages(messages);
 
       // Cloud Firestore save
