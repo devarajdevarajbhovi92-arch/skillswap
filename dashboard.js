@@ -272,6 +272,11 @@ if (!matchAnalyticsTracked) {
   const twoWayMatches = allMatches.filter(m => m.isTwoWay).length;
   const oneWayMatches = allMatches.filter(m => !m.isTwoWay).length;
 
+  console.log("GA4 Match Test:", {
+  totalMatches,
+  twoWayMatches,
+  oneWayMatches
+});
   if (totalMatches > 0) {
     trackEvent("match_found", {
       total_matches: totalMatches,
