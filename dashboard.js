@@ -278,6 +278,7 @@ if (!matchAnalyticsTracked) {
   oneWayMatches
 });
   if (totalMatches > 0) {
+    console.log("Sending GA4 event: match_found");
     trackEvent("match_found", {
       total_matches: totalMatches,
       two_way_matches: twoWayMatches,
