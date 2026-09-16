@@ -693,7 +693,6 @@ function trackEvent(eventName, parameters = {}) {
         try {
           const cred = await auth.signInWithEmailAndPassword(cleanEmail, password);
           authUser = cred ? cred.user : auth.currentUser;
-          trackEvent("login");
         } catch (err) {
           return { success: false, message: err.message || 'Invalid email or password.' };
         }
@@ -878,7 +877,6 @@ function trackEvent(eventName, parameters = {}) {
 
     // Logout
     logout: function() {
-      trackEvent("logout");
       try {
         localStorage.removeItem(SESSION_KEY);
         sessionStorage.removeItem(SESSION_KEY);
@@ -1083,8 +1081,8 @@ if (!conn) {
         requestCreated = true;
       }
       // GA4: Track successful connection request
-      if (requestCreated && typeof gtag === 'function') {
-  gtag('event', 'connection_request_sent');
+      if (requestCreated) {
+  trackEvent("connection_request_sent");
 }
 
       // Firestore sync
@@ -1149,10 +1147,6 @@ if (!conn) {
       } else if (response === 'NO') {
         conn.status = 'rejected';
         conn.rejectedBy = myEmail;
-
-        trackEvent("connection_declined", {
-    peer_email: peerEmail
-  });
 
         this.addNotification(
           targetEmail,
@@ -1262,9 +1256,6 @@ if (!conn) {
 
       reqs.push(newReq);
       saveCachedSessionRequests(reqs);
-      trackEvent("session_link_shared", {
-  peer_email: targetEmail
-});
 
       const db = getDb();
       if (db) {
@@ -1301,9 +1292,6 @@ if (!conn) {
 
       if (response === 'accepted' || response === 'ACCEPT') {
         req.status = 'accepted';
-        trackEvent("session_accepted", {
-    peer_email: peerEmail
-  });
         saveCachedSessionRequests(reqs);
 
         const sessions = getCachedSessions();
@@ -1323,6 +1311,7 @@ if (!conn) {
 
         sessions.push(newSess);
         saveCachedSessions(sessions);
+        trackEvent("session_started");
 
         if (db) {
           db.collection('sessions').doc(req.id).update({ status: 'accepted' }).catch(() => {});
@@ -1351,9 +1340,6 @@ if (!conn) {
 
       } else {
         req.status = 'declined';
-          trackEvent("session_declined", {
-    peer_email: peerEmail
-  });
         saveCachedSessionRequests(reqs);
 
         if (db) {
@@ -1456,9 +1442,6 @@ if (!conn) {
       const completedLower = activeSess.completedBy.map(e => (e || '').toLowerCase());
       if (!completedLower.includes(myEmail)) {
         activeSess.completedBy.push(myEmail);
-        trackEvent("session_completion_clicked", {
-    peer_email: targetEmail
-  });
       }
 
       const u1 = (activeSess.user1 || '').toLowerCase();
@@ -1694,9 +1677,6 @@ if (!conn) {
 
       // Optimistic save
       messages[chatKey].push(newMsg);
-      trackEvent("message_sent", {
-  peer_email: peerEmail
-});
       saveCachedMessages(messages);
 
       // Cloud Firestore save

@@ -27,8 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.location.replace('profile.html');
     return;
   }
-  trackEvent("dashboard_viewed");
-  // 2. Header & Profile Elements
+    // 2. Header & Profile Elements
   const dashUserGreeting = document.getElementById('dashUserGreeting');
   const dashLogoutBtn = document.getElementById('dashLogoutBtn');
   if (dashLogoutBtn) dashLogoutBtn.addEventListener('click', () => store.logout());
@@ -466,9 +465,6 @@ if (!matchAnalyticsTracked) {
     }
 
     activeMatchPeer = matchItem.peer;
-    trackEvent("chat_started", {
-  peer_email: activeMatchPeer.email
-});
     const peer = matchItem.peer;
 
     const initials = peer.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
