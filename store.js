@@ -239,8 +239,8 @@ function trackEvent(eventName, parameters = {}) {
     // 1. Listen to Users Collection (Reconciles Local Cache from Live Firestore State)
     db.collection('users').onSnapshot((snapshot) => {
       const activeUsersInFirestore = new Set();
-      const users = getCachedUsers();
-      const profiles = getCachedProfiles();
+      const users = {};
+const profiles = {};
 
       snapshot.forEach(doc => {
         const data = doc.data();
@@ -862,14 +862,13 @@ function trackEvent(eventName, parameters = {}) {
           updatedAt: updatedProfile.updatedAt
         };
 
-        try {
-          if (user.uid) {
-            await db.collection('users').doc(user.uid).set(payload, { merge: true });
-          }
-          await db.collection('users').doc(email).set(payload, { merge: true });
-        } catch (err) {
-          console.error('Firestore saveProfile Error:', err);
-        }
+        try { 
+  if (user.uid) { 
+    await db.collection('users').doc(user.uid).set(payload, { merge: true }); 
+  } 
+} catch (err) { 
+  console.error('Firestore saveProfile Error:', err); 
+}
       }
 
       return { success: true, profile: updatedProfile };
@@ -2166,8 +2165,8 @@ if (!conn) {
       if (!db) return;
       try {
         const usersSnap = await db.collection('users').get();
-        const users = getCachedUsers();
-        const profiles = getCachedProfiles();
+        const users = {};
+const profiles = {};
 
         usersSnap.forEach(doc => {
           const data = doc.data();
