@@ -962,9 +962,10 @@ function trackEvent(eventName, parameters = {}) {
           myTeach.some(myTeachSkill => isSkillMatch(peerSkill, myTeachSkill))
         );
 
-        const sharedAvail = peerAvail.filter(slot => myAvail.includes(slot));
-        const hasSkillMatch = peerTeachesWhatIWant.length > 0 || peerWantsWhatITeach.length > 0;
+        // Require at least one valid relationship (1-Way or 2-Way)
+        if (peerTeachesWhatIWant.length === 0 && peerWantsWhatITeach.length === 0) return;
 
+        const sharedAvail = peerAvail.filter(slot => myAvail.includes(slot));
         let score = 0;
         const matchReasons = [];
         let isTwoWay = false;
@@ -986,11 +987,6 @@ function trackEvent(eventName, parameters = {}) {
           matchTypeLabel = '1-Way Match';
           score += 40;
           matchReasons.push(`1-Way Match: ${peerFirstName} wants to learn ${peerWantsWhatITeach.join(', ')}.`);
-        } else {
-          isTwoWay = false;
-          matchTypeLabel = 'Skill Explorer';
-          score += 30;
-          matchReasons.push(`Registered Skill Explorer on SkillSwap`);
         }
 
         if (sharedAvail.length > 0) {
@@ -1001,9 +997,9 @@ function trackEvent(eventName, parameters = {}) {
 
         const matchPercentage = Math.min(99, Math.max(50, score));
 
-        // Strict tab filters
+        // Tab filters
         if (filterType === 'twoway' && !isTwoWay) return;
-        if (filterType === 'oneway' && (!hasSkillMatch || isTwoWay)) return;
+        if (filterType === 'oneway' && isTwoWay) return;
         if (availFilter !== 'all' && !peerAvail.includes(availFilter)) return;
 
         // Search query evaluation
