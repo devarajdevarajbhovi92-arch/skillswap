@@ -183,7 +183,11 @@ function trackEvent(eventName, parameters = {}) {
 
   // Firebase references
   function getDb() {
-    return (typeof window !== 'undefined' && window.firebaseDb) ? window.firebaseDb : null;
+    const db = (typeof window !== 'undefined' && window.firebaseDb) ? window.firebaseDb : null;
+    if (db && !firestoreListenersAttached) {
+      attachFirestoreListeners();
+    }
+    return db;
   }
 
   function getAuth() {
@@ -197,7 +201,7 @@ function trackEvent(eventName, parameters = {}) {
   // Realtime Firestore Subscriptions
   let firestoreListenersAttached = false;
   function attachFirestoreListeners() {
-    const db = getDb();
+    const db = (typeof window !== 'undefined' && window.firebaseDb) ? window.firebaseDb : null;
     if (!db || firestoreListenersAttached) return;
     firestoreListenersAttached = true;
 
@@ -239,13 +243,14 @@ function trackEvent(eventName, parameters = {}) {
     // 1. Listen to Users Collection (Reconciles Local Cache from Live Firestore State)
     db.collection('users').onSnapshot((snapshot) => {
       const activeUsersInFirestore = new Set();
-      const users = {};
-const profiles = {};
+      const users = getCachedUsers();
+      const profiles = getCachedProfiles();
 
       snapshot.forEach(doc => {
         const data = doc.data();
-        const email = (data.email || (doc.id.includes('@') ? doc.id : '')).toLowerCase();
+        let email = (data.email || (doc.id.includes('@') ? doc.id : '')).toLowerCase();
         const uid = data.uid || doc.id;
+        if (!email && doc.id.includes('@')) email = doc.id.toLowerCase();
         if (!email || data.accountStatus === 'deleted' || isUserDeleted(email)) return;
 
         activeUsersInFirestore.add(email);
@@ -283,12 +288,14 @@ const profiles = {};
       });
 
       // Purge any cached user no longer present in Firestore snapshot
-      Object.keys(users).forEach(email => {
-        if (!activeUsersInFirestore.has(email)) {
-          delete users[email];
-          delete profiles[email];
-        }
-      });
+      if (activeUsersInFirestore.size > 0) {
+        Object.keys(users).forEach(email => {
+          if (!activeUsersInFirestore.has(email)) {
+            delete users[email];
+            delete profiles[email];
+          }
+        });
+      }
 
       // Reconcile local cache from live Firestore state
       saveCachedUsers(users);
@@ -863,12 +870,15 @@ const profiles = {};
         };
 
         try { 
-  if (user.uid) { 
-    await db.collection('users').doc(user.uid).set(payload, { merge: true }); 
-  } 
-} catch (err) { 
-  console.error('Firestore saveProfile Error:', err); 
-}
+          if (user.uid) { 
+            await db.collection('users').doc(user.uid).set(payload, { merge: true }); 
+          }
+          if (email) {
+            await db.collection('users').doc(email).set(payload, { merge: true }).catch(() => {});
+          }
+        } catch (err) { 
+          console.error('Firestore saveProfile Error:', err); 
+        }
       }
 
       return { success: true, profile: updatedProfile };
@@ -935,7 +945,7 @@ const profiles = {};
       }
 
       Object.values(allProfiles).forEach(peer => {
-        if (peer.email.toLowerCase() === currentProfile.email.toLowerCase()) return;
+        if (!peer || !peer.email || peer.email.toLowerCase() === currentProfile.email.toLowerCase()) return;
 
         const peerUser = allUsers[peer.email.toLowerCase()];
         if (peerUser && peerUser.accountStatus === 'blocked') return;
@@ -953,9 +963,7 @@ const profiles = {};
         );
 
         const sharedAvail = peerAvail.filter(slot => myAvail.includes(slot));
-
-        // NO MATCH: If neither direction matches, exclude
-        if (peerTeachesWhatIWant.length === 0 && peerWantsWhatITeach.length === 0) return;
+        const hasSkillMatch = peerTeachesWhatIWant.length > 0 || peerWantsWhatITeach.length > 0;
 
         let score = 0;
         const matchReasons = [];
@@ -978,6 +986,11 @@ const profiles = {};
           matchTypeLabel = '1-Way Match';
           score += 40;
           matchReasons.push(`1-Way Match: ${peerFirstName} wants to learn ${peerWantsWhatITeach.join(', ')}.`);
+        } else {
+          isTwoWay = false;
+          matchTypeLabel = 'Skill Explorer';
+          score += 30;
+          matchReasons.push(`Registered Skill Explorer on SkillSwap`);
         }
 
         if (sharedAvail.length > 0) {
@@ -988,10 +1001,12 @@ const profiles = {};
 
         const matchPercentage = Math.min(99, Math.max(50, score));
 
+        // Strict tab filters
         if (filterType === 'twoway' && !isTwoWay) return;
-        if (filterType === 'oneway' && isTwoWay) return;
+        if (filterType === 'oneway' && (!hasSkillMatch || isTwoWay)) return;
         if (availFilter !== 'all' && !peerAvail.includes(availFilter)) return;
 
+        // Search query evaluation
         if (searchQuery.trim() !== '') {
           const q = searchQuery.toLowerCase();
           const matchesName = (peer.name || '').toLowerCase().includes(q);
